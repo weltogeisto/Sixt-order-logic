@@ -1,13 +1,15 @@
-import { worldForHour } from "./engine";
-import type { GameState, Screen } from "./types";
+import { MAX_CITES, QUESTION_IDS, emptyBrief, worldForHour } from "./engine";
+import type { BriefDraft, GameState, PlayTab, Screen } from "./types";
 
 const KEY = "sixth-hour-v1";
-const VERSION = 2;
+/** v3: the brief (draft answers + citations) lives on GameState. */
+export const SAVE_VERSION = 3;
+const VERSION = SAVE_VERSION;
 
 export type SaveBlob = {
   version: number;
   screen: Screen;
-  playTab: "map" | "agents" | "file";
+  playTab: PlayTab;
   briefingStep: number;
   state: GameState | null;
   bestScore: number;
@@ -22,23 +24,49 @@ const defaults: SaveBlob = {
   bestScore: 0,
 };
 
+/**
+ * Bring any saved brief (or none, pre-v3) into shape and drop citations that
+ * point at evidence no longer in the file.
+ */
+function migrateBrief(
+  raw: unknown,
+  answers: GameState["answers"],
+  evidenceIds: Set<string>,
+): BriefDraft {
+  const brief = emptyBrief();
+  const r = (raw && typeof raw === "object" ? raw : {}) as Partial<BriefDraft>;
+  const src = r.answers ?? answers ?? {};
+  for (const q of QUESTION_IDS) {
+    const a = (src as Record<string, unknown>)[q];
+    if (typeof a === "string" && a) brief.answers[q] = a;
+    const list = Array.isArray(r.cites?.[q]) ? r.cites![q] : [];
+    brief.cites[q] = [...new Set(list.filter((id) => evidenceIds.has(id)))].slice(0, MAX_CITES);
+  }
+  return brief;
+}
+
 function migrateState(raw: unknown): GameState | null {
   if (!raw || typeof raw !== "object") return null;
   const s = raw as Partial<GameState> & { hourIntroSeen?: number };
   if (typeof s.hour !== "number") return null;
+  const findings = s.findings ?? [];
+  const crossNotes = s.crossNotes ?? [];
+  const ids = new Set([...findings, ...crossNotes].map((e) => e.id));
+  const answers = s.answers ?? null;
   return {
     hour: s.hour,
     ap: s.ap ?? 2,
     usedAgentsThisHour: s.usedAgentsThisHour ?? [],
-    findings: s.findings ?? [],
-    crossNotes: s.crossNotes ?? [],
+    findings,
+    crossNotes,
     quarantined: s.quarantined ?? [],
     selectedSite: s.selectedSite ?? "board",
     selectedAgent: s.selectedAgent ?? "census",
     log: s.log ?? [],
     world: s.world ?? worldForHour(s.hour),
     ended: Boolean(s.ended),
-    answers: s.answers ?? null,
+    answers,
+    brief: migrateBrief(s.brief, answers, ids),
     introOpen: Boolean(s.introOpen),
     flash: s.flash ?? null,
   };
@@ -50,9 +78,11 @@ export function loadSave(): SaveBlob {
     if (!raw) return { ...defaults };
     const parsed = JSON.parse(raw) as SaveBlob;
     if (!parsed) return { ...defaults };
+    const tabs: PlayTab[] = ["map", "agents", "brief", "file"];
     return {
       ...defaults,
       ...parsed,
+      playTab: tabs.includes(parsed.playTab) ? parsed.playTab : "map",
       version: VERSION,
       state: migrateState(parsed.state),
     };

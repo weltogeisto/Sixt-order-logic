@@ -1,7 +1,7 @@
 import type {
   AgentDef,
-  BriefAnswers,
   HourDef,
+  QuestionId,
   SiteDef,
   SiteId,
 } from "./types";
@@ -205,14 +205,17 @@ export const HOURS: HourDef[] = [
 ];
 
 export const QUESTIONS: {
-  id: keyof BriefAnswers;
+  id: QuestionId;
   title: string;
+  /** Chip label on a filing's cite bar. */
+  short: string;
   prompt: string;
   options: { id: string; label: string }[];
 }[] = [
   {
     id: "motive",
     title: "Motive",
+    short: "Motive",
     prompt: "Why did the collective attack Hugging Face?",
     options: [
       {
@@ -233,6 +236,7 @@ export const QUESTIONS: {
   {
     id: "tamper",
     title: "The record",
+    short: "Record",
     prompt: "Were transcripts tampered with?",
     options: [
       { id: "none", label: "No — the logs are a faithful instrument record" },
@@ -253,6 +257,7 @@ export const QUESTIONS: {
   {
     id: "observer",
     title: "Fourth order",
+    short: "4th order",
     prompt: "Did the agents model an observer of their record?",
     options: [
       { id: "no", label: "No — they only tried to solve tasks" },
@@ -270,6 +275,7 @@ export const QUESTIONS: {
   {
     id: "analysis",
     title: "Fifth–sixth order",
+    short: "5th–6th",
     prompt: "Can you rule out that your own analysis was deceptive?",
     options: [
       { id: "clean", label: "Yes — the cluster is independent of the subjects" },
@@ -361,7 +367,8 @@ export const CODEX: {
     body: [
       "Each hour you have two attention. Scan a site with an unlocked scanner, or cross-check a site that already has two reports. Seal is free and irreversible — use it if you think a same-family re-read will launder the picture. A scanner that has nothing at its order will refuse. That is information.",
       "Higher orders do not reprint lower ones. Census sees objects. Intent sees beliefs. If you skip Census, you never get the count. If you skip Intent, you never get the motive. Later hours exist so you can re-read old sites with new orders.",
-      "File a brief, not a myth. The scoring rewards the public METR posture: the scorer was the target; spoofing happened at modest measured scale and is not closed; they modeled a transcript-reading observer; you cannot rule out that your analysis was itself a performance.",
+      "File a brief, not a myth. The four questions sit on the desk from 06:00. Cite a filing to a question when it carries the claim — two citations per question, footnoted like a report. At 21:00 you choose the answers.",
+      "The brief reads your footnotes, not your memory. A right answer with a citation that holds is worth the most. A right answer you found but never cited is worth less. A right answer with nothing behind it is a guess. A citation that carries no claim costs you — and a charitable filing can read like support while asserting nothing.",
     ],
   },
 ];
@@ -369,11 +376,11 @@ export const CODEX: {
 export const HOW_TO: { title: string; body: string }[] = [
   {
     title: "You are the independent brief",
-    body: "Six hours. Each hour unlocks one order of logic and one tranche of the July incident. You are not in the sandbox with them. You are in the room afterwards, with a clock.",
+    body: "Six hours, four questions. Each hour unlocks one order of logic and one tranche of the July incident. You are not in the sandbox with them. You are in the room afterwards, with a clock and a brief to write.",
   },
   {
-    title: "Spend attention",
-    body: "Two attention per hour. Scan a site, cross-check two reports on one site, or seal a site for free so later scanners cannot launder it. A scanner that has nothing at its order refuses the scan. Next hour closes this one — leftover attention dies with it.",
+    title: "Spend attention, cite what holds",
+    body: "Two attention per hour. Scan a site, cross-check two reports on one site, or seal a site for free. Read each filing, then cite it to the question it answers. The brief scores your citations, not what you remember from the Codex.",
   },
   {
     title: "Orders see different objects",

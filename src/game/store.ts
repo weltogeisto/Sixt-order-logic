@@ -6,11 +6,13 @@ import {
   createInitialState,
   crossCheck,
   dismissIntro,
+  draftAnswer,
   fileBrief,
   quarantine,
+  toggleCite,
 } from "./engine";
-import { loadSave, writeSave, type SaveBlob } from "./save";
-import type { AgentId, BriefAnswers, GameState, PlayTab, Screen, SiteId } from "./types";
+import { SAVE_VERSION, loadSave, writeSave, type SaveBlob } from "./save";
+import type { AgentId, GameState, PlayTab, QuestionId, Screen, SiteId } from "./types";
 
 type GameStore = SaveBlob & {
   ready: boolean;
@@ -31,13 +33,15 @@ type GameStore = SaveBlob & {
   doAdvance: () => void;
   doDismissIntro: () => void;
   doClearFlash: () => void;
-  doFile: (answers: BriefAnswers) => void;
+  doCite: (q: QuestionId, evidenceId: string) => void;
+  doDraft: (q: QuestionId, optionId: string) => void;
+  doFile: () => void;
   setBest: (n: number) => void;
   resetToTitle: () => void;
 };
 
 const empty: SaveBlob = {
-  version: 2,
+  version: SAVE_VERSION,
   screen: "title",
   playTab: "map",
   briefingStep: 0,
@@ -47,7 +51,7 @@ const empty: SaveBlob = {
 
 function persistNow(get: () => GameStore) {
   const { screen, playTab, briefingStep, state, bestScore } = get();
-  writeSave({ version: 2, screen, playTab, briefingStep, state, bestScore });
+  writeSave({ version: SAVE_VERSION, screen, playTab, briefingStep, state, bestScore });
 }
 
 export const useGame = create<GameStore>((set, get) => ({
@@ -61,11 +65,7 @@ export const useGame = create<GameStore>((set, get) => ({
   persist: () => persistNow(get),
   setScreen: (screen) => {
     const cur = get().screen;
-    set(
-      screen === "codex" && cur !== "codex"
-        ? { screen, returnTo: cur }
-        : { screen },
-    );
+    set(screen === "codex" && cur !== "codex" ? { screen, returnTo: cur } : { screen });
     persistNow(get);
   },
   setPlayTab: (playTab) => {
@@ -109,8 +109,10 @@ export const useGame = create<GameStore>((set, get) => ({
   },
   doDismissIntro: () => get().patch(dismissIntro),
   doClearFlash: () => get().patch(clearFlash),
-  doFile: (answers) => {
-    get().patch((s) => fileBrief(s, answers));
+  doCite: (q, evidenceId) => get().patch((s) => toggleCite(s, q, evidenceId)),
+  doDraft: (q, optionId) => get().patch((s) => draftAnswer(s, q, optionId)),
+  doFile: () => {
+    get().patch(fileBrief);
     set({ screen: "debrief" });
     persistNow(get);
   },

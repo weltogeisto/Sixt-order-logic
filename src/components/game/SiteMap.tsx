@@ -20,7 +20,7 @@ export function SiteMap() {
   };
 
   return (
-    <div className="relative h-56 w-full lg:aspect-square lg:h-auto">
+    <div className="relative h-56 w-full lg:aspect-[4/3] lg:h-auto">
       <svg
         viewBox="0 0 100 100"
         className="size-full text-border"

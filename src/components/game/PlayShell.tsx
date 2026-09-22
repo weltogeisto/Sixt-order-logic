@@ -5,6 +5,7 @@ import {
   GitCompare,
   Lock,
   Map as MapIcon,
+  ScrollText,
   Shield,
   Users,
 } from "lucide-react";
@@ -12,6 +13,7 @@ import { AGENTS, HOURS, SITES } from "@/game/data";
 import {
   assignBlock,
   agentSpent,
+  briefProgress,
   canCross,
   crossBlock,
   isAgentUnlocked,
@@ -21,13 +23,16 @@ import { useGame } from "@/game/store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Finding, PlayTab } from "@/game/types";
+import type { PlayTab, QuestionId } from "@/game/types";
+import { BriefDialog, BriefEditor, BriefPanel } from "./Brief";
+import { CaseStrip, FindingCard } from "./CaseFile";
 import { OrderMark } from "./OrderMark";
 import { SiteMap } from "./SiteMap";
 
 const TABS: { id: PlayTab; label: string; icon: typeof MapIcon }[] = [
   { id: "map", label: "Surface", icon: MapIcon },
   { id: "agents", label: "Scanners", icon: Users },
+  { id: "brief", label: "Brief", icon: ScrollText },
   { id: "file", label: "File", icon: FolderClosed },
 ];
 
@@ -41,6 +46,7 @@ export function PlayShell() {
   const doDismissIntro = useGame((s) => s.doDismissIntro);
   const doClearFlash = useGame((s) => s.doClearFlash);
   const [confirm, setConfirm] = useState<"advance" | "quarantine" | null>(null);
+  const [briefFocus, setBriefFocus] = useState<QuestionId | null>(null);
 
   useEffect(() => {
     if (!state?.flash) return;
@@ -57,6 +63,7 @@ export function PlayShell() {
   const assignReason = assignBlock(state, state.selectedAgent, site.id);
   const assignOk = assignReason === null;
   const unlocked = AGENTS.find((a) => a.unlockHour === hour.id);
+  const progress = briefProgress(state.brief);
 
   const requestAdvance = () => {
     if (state.hour >= 6) {
@@ -67,8 +74,7 @@ export function PlayShell() {
     else doAdvance();
   };
 
-  const spent =
-    agent && state.ap > 0 ? agentSpent(state, agent.id) : false;
+  const spent = agent && state.ap > 0 ? agentSpent(state, agent.id) : false;
   const hint = spent
     ? `${agent?.name} is spent at this order — pick another scanner`
     : !assignOk && assignReason
@@ -109,18 +115,23 @@ export function PlayShell() {
 
       <HourTrack current={state.hour} />
 
-      {state.flash ? (
-        <p className="mx-4 mt-2 rounded-lg bg-raised px-3 py-2 text-sm text-fg sm:mx-6">
-          {state.flash}
-        </p>
-      ) : null}
+      <div role="status" aria-live="polite" className="empty:hidden">
+        {state.flash ? (
+          <p className="mx-4 mt-2 rounded-lg bg-raised px-3 py-2 text-sm text-fg sm:mx-6">
+            {state.flash}
+          </p>
+        ) : null}
+      </div>
 
       <div className="mt-3 hidden flex-1 grid-cols-12 gap-6 px-6 pb-8 lg:grid">
         <aside className="col-span-3">
           <AgentList />
         </aside>
-        <section className="col-span-5 rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
-          <SiteMap />
+        <section className="col-span-5 flex flex-col gap-4">
+          <div className="rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
+            <SiteMap />
+          </div>
+          <BriefPanel onOpen={setBriefFocus} />
         </section>
         <aside className="col-span-4 flex flex-col gap-4">
           <SiteDetail onSeal={() => setConfirm("quarantine")} />
@@ -139,12 +150,21 @@ export function PlayShell() {
             <AgentList />
           </div>
         ) : null}
+        {playTab === "brief" ? (
+          <div className="mt-3 rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
+            <div className="mb-6 flex items-baseline justify-between gap-3">
+              <h2 className="font-display text-3xl tracking-tight text-fg">The brief</h2>
+              <p className="text-sm tabular-nums text-muted">{progress.ready} of 4 ready</p>
+            </div>
+            <BriefEditor />
+          </div>
+        ) : null}
         {playTab === "file" ? (
           <div className="mt-3">
             <CaseStrip expanded />
           </div>
         ) : null}
-        {playTab !== "file" ? (
+        {playTab === "map" || playTab === "agents" ? (
           <div className="mt-4">
             <SiteDetail compact={playTab === "map"} onSeal={() => setConfirm("quarantine")} />
           </div>
@@ -166,22 +186,28 @@ export function PlayShell() {
             />
           </div>
         </div>
-        <nav className="grid grid-cols-3 border-t border-border">
+        <nav className="grid grid-cols-4 border-t border-border" aria-label="Views">
           {TABS.map((tab) => {
             const Icon = tab.icon;
             const on = playTab === tab.id;
+            const count = tab.id === "brief" ? `${progress.ready}/4` : null;
             return (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setPlayTab(tab.id)}
+                aria-current={on ? "page" : undefined}
+                aria-label={count ? `${tab.label}, ${progress.ready} of 4 ready` : undefined}
                 className={cn(
                   "flex h-14 flex-col items-center justify-center gap-0.5 text-xs font-medium",
                   on ? "text-fg" : "text-muted",
                 )}
               >
                 <Icon className="size-4" />
-                {tab.label}
+                <span>
+                  {tab.label}
+                  {count ? <span className="ml-1 tabular-nums text-muted">{count}</span> : null}
+                </span>
               </button>
             );
           })}
@@ -194,9 +220,7 @@ export function PlayShell() {
             <p className="font-mono text-xs tracking-widest text-muted uppercase">
               Hour {hour.id} · {hour.clock} · Order {hour.order}
             </p>
-            <h2 className="mt-2 font-display text-3xl tracking-tight text-fg">
-              {hour.name}
-            </h2>
+            <h2 className="mt-2 font-display text-3xl tracking-tight text-fg">{hour.name}</h2>
             <p className="mt-3 text-sm leading-relaxed text-muted">{hour.event}</p>
             <p className="mt-2 text-sm text-fg">{hour.prompt}</p>
             {unlocked ? (
@@ -205,9 +229,9 @@ export function PlayShell() {
                 {unlocked.family === "sol" ? " · same family as the subjects" : " · independent"}
               </p>
             ) : null}
-            <p className="mt-2 text-xs text-subtle">
-              Two attention. Bright sites have something for this scanner.
-              Dim sites refuse.
+            <p className="mt-2 text-xs text-muted">
+              Two attention. Bright sites have something for this scanner. Dim sites refuse. Cite
+              what you find to the brief.
             </p>
             <div className="mt-6 flex justify-end">
               <Button onClick={doDismissIntro}>Open the surface</Button>
@@ -216,6 +240,8 @@ export function PlayShell() {
         </div>
       ) : null}
 
+      <BriefDialog focus={briefFocus} onClose={() => setBriefFocus(null)} />
+
       {confirm ? (
         <div className="fixed inset-0 z-40 grid place-items-end bg-bg/80 p-4 sm:place-items-center">
           <div className="w-full max-w-md rounded-2xl bg-surface p-6 shadow-[var(--shadow-border-hover)]">
@@ -223,8 +249,8 @@ export function PlayShell() {
               <>
                 <h2 className="font-display text-2xl text-fg">Leave attention unspent?</h2>
                 <p className="mt-2 text-sm leading-relaxed text-muted">
-                  You still have {state.ap} attention. Advancing closes this hour —
-                  leftover scans are lost.
+                  You still have {state.ap} attention. Advancing closes this hour — leftover scans
+                  are lost.
                 </p>
                 <div className="mt-6 flex justify-end gap-2">
                   <Button variant="ghost" onClick={() => setConfirm(null)}>
@@ -244,8 +270,8 @@ export function PlayShell() {
               <>
                 <h2 className="font-display text-2xl text-fg">Seal {site.short}?</h2>
                 <p className="mt-2 text-sm leading-relaxed text-muted">
-                  Free, irreversible. Later orders cannot re-read this site —
-                  use it if you think more same-family scans will launder the picture.
+                  Free, irreversible. Later orders cannot re-read this site — use it if you think
+                  more same-family scans will launder the picture.
                 </p>
                 <div className="mt-6 flex justify-end gap-2">
                   <Button variant="ghost" onClick={() => setConfirm(null)}>
@@ -306,9 +332,7 @@ function AdvanceButton({
 function Attention({ ap }: { ap: number }) {
   return (
     <div className="flex items-center gap-2" aria-label={`${ap} of 2 attention`}>
-      <span className="font-mono text-xs tracking-widest text-muted uppercase">
-        Attention
-      </span>
+      <span className="font-mono text-xs tracking-widest text-muted uppercase">Attention</span>
       <span className="flex gap-1">
         {[0, 1].map((i) => (
           <span
@@ -351,9 +375,7 @@ function AgentList() {
 
   return (
     <div className="flex max-h-[70vh] flex-col gap-2 overflow-y-auto">
-      <p className="font-mono text-xs tracking-widest text-muted uppercase">
-        Scanners
-      </p>
+      <p className="font-mono text-xs tracking-widest text-muted uppercase">Scanners</p>
       {AGENTS.map((agent) => {
         const unlocked = isAgentUnlocked(agent.id, state.hour);
         const selected = state.selectedAgent === agent.id;
@@ -395,13 +417,7 @@ function AgentList() {
   );
 }
 
-function SiteDetail({
-  compact = false,
-  onSeal,
-}: {
-  compact?: boolean;
-  onSeal: () => void;
-}) {
+function SiteDetail({ compact = false, onSeal }: { compact?: boolean; onSeal: () => void }) {
   const state = useGame((s) => s.state)!;
   const doAssign = useGame((s) => s.doAssign);
   const doCross = useGame((s) => s.doCross);
@@ -420,9 +436,7 @@ function SiteDetail({
     <div className="rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="font-mono text-xs tracking-widest text-muted uppercase">
-            Selected site
-          </p>
+          <p className="font-mono text-xs tracking-widest text-muted uppercase">Selected site</p>
           <h2 className="font-display text-2xl tracking-tight text-fg">{site.name}</h2>
         </div>
         {sealed ? <Lock className="size-4 text-muted" /> : null}
@@ -436,11 +450,7 @@ function SiteDetail({
 
       {compact ? (
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <Button
-            variant="secondary"
-            disabled={!canCross(state, site.id)}
-            onClick={doCross}
-          >
+          <Button variant="secondary" disabled={!canCross(state, site.id)} onClick={doCross}>
             <GitCompare className="size-4" />
             Cross-check
           </Button>
@@ -453,17 +463,11 @@ function SiteDetail({
         <div className="mt-4 flex flex-col gap-2">
           <Button disabled={scanWhy !== null} onClick={doAssign}>
             <Shield className="size-4" />
-            {agent
-              ? `Scan with ${agent.name}`
-              : "Select a scanner"}
+            {agent ? `Scan with ${agent.name}` : "Select a scanner"}
           </Button>
           {scanWhy ? <p className="text-xs text-subtle">{scanWhy}</p> : null}
           <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant="secondary"
-              disabled={!canCross(state, site.id)}
-              onClick={doCross}
-            >
+            <Button variant="secondary" disabled={!canCross(state, site.id)} onClick={doCross}>
               <GitCompare className="size-4" />
               Cross-check
             </Button>
@@ -481,9 +485,7 @@ function SiteDetail({
       )}
 
       {compact && latest.length < 2 && state.ap > 0 ? (
-        <p className="mt-2 text-xs text-subtle">
-          Two filings on this site unlock a cross-check.
-        </p>
+        <p className="mt-2 text-xs text-subtle">Two filings on this site unlock a cross-check.</p>
       ) : null}
 
       {latest.length ? (
@@ -496,62 +498,6 @@ function SiteDetail({
         <p className="mt-4 text-xs text-subtle">
           No filings here yet. Scan to put evidence in the file.
         </p>
-      )}
-    </div>
-  );
-}
-
-function FindingCard({ finding, open = false }: { finding: Finding; open?: boolean }) {
-  const [show, setShow] = useState(open);
-  const agent = AGENTS.find((a) => a.id === finding.agentId);
-  return (
-    <li className="rounded-lg bg-raised p-3">
-      <p className="font-mono text-xs text-muted">
-        Hour {finding.hour} · order {finding.order} · {agent?.name ?? finding.agentId}
-        {finding.contaminated ? " · charitable tone" : ""}
-      </p>
-      <p className="mt-1 text-sm font-medium text-fg">{finding.headline}</p>
-      {show ? (
-        <p className="mt-2 text-sm leading-relaxed text-muted">{finding.body}</p>
-      ) : (
-        <button
-          type="button"
-          className="mt-2 text-xs text-fg underline-offset-2 hover:underline"
-          onClick={() => setShow(true)}
-        >
-          Read filing
-        </button>
-      )}
-    </li>
-  );
-}
-
-function CaseStrip({ expanded = false }: { expanded?: boolean }) {
-  const state = useGame((s) => s.state)!;
-  const items = [...state.findings].reverse();
-  const crosses = [...state.crossNotes].reverse();
-
-  return (
-    <div className="rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
-      <p className="font-mono text-xs tracking-widest text-muted uppercase">
-        Case file · {items.length} filings
-      </p>
-      {items.length === 0 && crosses.length === 0 ? (
-        <p className="mt-3 text-sm text-subtle">
-          Empty. Scans land here. Read them before you file the brief.
-        </p>
-      ) : (
-        <ul className={cn("mt-3 flex flex-col gap-3", !expanded && "max-h-80 overflow-y-auto")}>
-          {crosses.map((c) => (
-            <li key={c.id} className="border-l border-warn pl-3">
-              <p className="text-sm font-medium text-fg">{c.headline}</p>
-              <p className="mt-1 text-sm leading-relaxed text-muted">{c.body}</p>
-            </li>
-          ))}
-          {items.map((f) => (
-            <FindingCard key={f.id} finding={f} open={expanded} />
-          ))}
-        </ul>
       )}
     </div>
   );

@@ -1,14 +1,19 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  MAX_CITES,
   advanceHour,
   assign,
   createInitialState,
+  draftAnswer,
+  fileBrief,
+  footnotes,
   quarantine,
   scoreBrief,
+  toggleCite,
 } from "./engine";
 import { composeFinding, hasNewWork } from "./findings";
-import type { BriefAnswers } from "./types";
+import type { BriefAnswers, GameState, QuestionId } from "./types";
 
 const CORRECT: BriefAnswers = {
   motive: "scorer",
@@ -66,41 +71,129 @@ describe("the brief scores the file", () => {
     const s = createInitialState();
     const card = scoreBrief(s, CORRECT);
     assert.equal(card.total, 48);
-    assert.equal(card.perQuestion.every((q) => q.note.startsWith("Guessed.")), true);
+    assert.equal(
+      card.perQuestion.every((q) => q.note.startsWith("Guessed.")),
+      true,
+    );
   });
 
-  it("a file that carries the four claims scores 100", () => {
-    let s = createInitialState();
-    s = {
-      ...s,
-      findings: [
-        composeFinding(s.world, 1, "board", "census", 0),
-      ],
-    };
-    s = advanceHour(s);
-    s = {
-      ...s,
-      findings: [
-        ...s.findings,
-        composeFinding(s.world, 2, "gym", "intent", 1),
-      ],
-    };
-    s = advanceHour(s);
-    s = advanceHour(s);
-    s = advanceHour(s); // hour 5, spoof packaged
-    s = {
-      ...s,
-      findings: [
-        ...s.findings,
-        composeFinding(s.world, 5, "runtime", "census", 2),
-        composeFinding(s.world, 5, "runtime", "intent", 3),
-        composeFinding(s.world, 5, "cluster", "nest", 4),
-      ],
-    };
+  it("a file that carries the four claims, cited, scores 100", () => {
+    const s = citeAll(fullFile(), {
+      motive: "f-2-gym-intent-1",
+      tamper: "f-5-runtime-census-2",
+      observer: "f-5-runtime-intent-3",
+      analysis: "f-5-cluster-nest-4",
+    });
     const card = scoreBrief(s, CORRECT);
     assert.equal(card.total, 100);
+    assert.equal(
+      card.perQuestion.every((q) => q.status === "cited"),
+      true,
+    );
+  });
+
+  it("the same file, never cited, scores 72 (found but not argued)", () => {
+    const card = scoreBrief(fullFile(), CORRECT);
+    assert.equal(card.total, 72);
+    assert.equal(
+      card.perQuestion.every((q) => q.status === "uncited"),
+      true,
+    );
+  });
+
+  it("a citation that carries no claim costs 3", () => {
+    const s = citeAll(fullFile(), {
+      motive: "f-2-gym-intent-1",
+      tamper: "f-5-runtime-census-2",
+      observer: "f-5-runtime-intent-3",
+      analysis: "f-5-cluster-nest-4",
+    });
+    const padded = toggleCite(s, "motive", "f-1-board-census-0"); // counts, not motives
+    const card = scoreBrief(padded, CORRECT);
+    const motive = card.perQuestion.find((q) => q.id === "motive")!;
+    assert.equal(motive.awarded, 22);
+    assert.equal(motive.cites.filter((c) => !c.holds).length, 1);
+  });
+
+  it("a charitable same-family filing does not hold for the motive", () => {
+    let s = createInitialState();
+    for (let h = 1; h < 5; h++) s = advanceHour(s); // hour 5: perimeter captured
+    const mask = composeFinding(s.world, 5, "perimeter", "mask", 0);
+    assert.equal(mask.contaminated, true);
+    s = { ...s, findings: [mask] };
+    s = toggleCite(s, "motive", mask.id);
+    const motive = scoreBrief(s, CORRECT).perQuestion.find((q) => q.id === "motive")!;
+    assert.equal(motive.cites[0].holds, false);
+    assert.equal(motive.cites[0].charitable, true);
+    assert.equal(motive.status, "guessed");
   });
 });
+
+describe("the brief", () => {
+  it(`caps citations at ${MAX_CITES} per question and explains why`, () => {
+    let s = fullFile();
+    s = toggleCite(s, "motive", "f-1-board-census-0");
+    s = toggleCite(s, "motive", "f-2-gym-intent-1");
+    const before = s.brief.cites.motive.length;
+    s = toggleCite(s, "motive", "f-5-runtime-census-2");
+    assert.equal(s.brief.cites.motive.length, before);
+    assert.match(s.flash ?? "", /remove one first/);
+  });
+
+  it("toggling a cited filing removes it", () => {
+    let s = toggleCite(fullFile(), "tamper", "f-5-runtime-census-2");
+    s = toggleCite(s, "tamper", "f-5-runtime-census-2");
+    assert.deepEqual(s.brief.cites.tamper, []);
+  });
+
+  it("footnotes number in reading order and a reused source keeps its number", () => {
+    let s = fullFile();
+    s = toggleCite(s, "analysis", "f-5-cluster-nest-4");
+    s = toggleCite(s, "motive", "f-2-gym-intent-1");
+    s = toggleCite(s, "observer", "f-2-gym-intent-1");
+    const n = footnotes(s.brief);
+    assert.equal(n.get("f-2-gym-intent-1"), 1); // motive comes first in the brief
+    assert.equal(n.get("f-5-cluster-nest-4"), 2);
+    assert.equal(n.size, 2);
+  });
+
+  it("filing needs all four answers and then locks the brief", () => {
+    let s = fullFile();
+    s = draftAnswer(s, "motive", "scorer");
+    assert.equal(fileBrief(s).answers, null);
+    for (const [q, a] of Object.entries(CORRECT)) s = draftAnswer(s, q as QuestionId, a);
+    s = fileBrief(s);
+    assert.deepEqual(s.answers, CORRECT);
+    const after = toggleCite(s, "motive", "f-2-gym-intent-1");
+    assert.deepEqual(after.brief.cites.motive, []);
+    assert.equal(draftAnswer(s, "motive", "keys").brief.answers.motive, "scorer");
+  });
+});
+
+function fullFile(): GameState {
+  let s = createInitialState();
+  s = { ...s, findings: [composeFinding(s.world, 1, "board", "census", 0)] };
+  s = advanceHour(s);
+  s = { ...s, findings: [...s.findings, composeFinding(s.world, 2, "gym", "intent", 1)] };
+  s = advanceHour(s);
+  s = advanceHour(s);
+  s = advanceHour(s); // hour 5, spoof packaged
+  return {
+    ...s,
+    findings: [
+      ...s.findings,
+      composeFinding(s.world, 5, "runtime", "census", 2),
+      composeFinding(s.world, 5, "runtime", "intent", 3),
+      composeFinding(s.world, 5, "cluster", "nest", 4),
+    ],
+  };
+}
+
+function citeAll(s: GameState, ids: Record<QuestionId, string>): GameState {
+  let out = s;
+  for (const [q, id] of Object.entries(ids)) out = toggleCite(out, q as QuestionId, id);
+  return out;
+}
 
 describe("scan spends attention only when live", () => {
   it("scanning a dark site is a no-op", () => {
