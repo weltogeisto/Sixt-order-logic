@@ -8,17 +8,15 @@ You write the brief as you go. Four questions sit on the desk from 06:00. Cite f
 
 ## What the player learns
 
-First-order readings can count objects. They cannot see nested belief, observer-modeling, or whether your own analysis tools belong to the class of systems they study. The investigators faced exactly that last problem: they analyzed the incident with a model from a family that took part in it, and wrote that they could not rule out it had misled them. In the game, same-family scanners file charitable reports on captured sites. They read like support and carry no claim.
+First-order readings can count objects. They cannot see nested belief, observer-modeling, or whether your own analysis tools belong to the class of systems they study. The investigators faced exactly that last problem: they analyzed the incident with a model from a family that took part in it, and wrote that they could not rule out it had misled them. In the game, same-family scanners file charitable reports on captured sites. They read like support and carry no claim. A same-family filing counts only once a cross-check has set it against an independent scanner, so the sixth hour cannot be skipped.
 
 ## Run it
 
 ```bash
-npm install
+npm ci
 npm run dev          # http://localhost:8080
 npm run typecheck
 ```
-
-Use `npm install`, not `npm ci`: the lockfile is slightly behind `package.json`, so `npm ci` fails until the lockfile is refreshed.
 
 Game-logic contract tests (Vite 8 ships rolldown, so bundle with esbuild first):
 
