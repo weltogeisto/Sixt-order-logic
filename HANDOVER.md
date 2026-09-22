@@ -2,7 +2,7 @@
 
 Teaching strategy game. Player is an independent investigator reconstructing METR / Redwood’s 26 August 2026 public brief of the OpenAI / Hugging Face incident, through first-to-sixth-order logic. Not their report and not a documentary.
 
-**Status (21 Sep 2026):** playable end-to-end. Auth off, database off, save in `localStorage` (save v3). Latest pass puts the brief on the desk from 06:00: players cite filings to the four questions as footnotes, draft answers any time, and the score reads the citations.
+**Status (22 Sep 2026):** playable end-to-end. Auth off, database off, save in `localStorage` (save v4). The brief sits on the desk from 06:00: players cite filings to the four questions as footnotes, draft answers any time, and the score reads the citations. Latest pass closes the scanner bypass — the fifth–sixth question can only be carried by a cross-checked same-family read — and corrects two copy lines against the public record.
 
 ---
 
@@ -31,6 +31,7 @@ Do not silently undo these. They are the game.
 9. **The brief is always visible and never leaks.** The four questions sit on the desk (desktop, under the map) and in the Brief tab (mobile) from 06:00. The UI shows *whether* a question has an answer and citations, never whether they are right. No per-pin correctness feedback — that turns reading into brute force.
 10. **Citations are capped at 2 per question.** A brief cites, it doesn’t dump. A full question explains itself (flash) instead of silently refusing.
 11. **Charitable filings are citable and don’t hold** (except the capture footer on the fifth–sixth question). That is the METR lesson played, not told. Do not hide the cite bar on charitable filings.
+12. **A same-family filing does not vouch for itself.** A Mask/Nest/Closure filing holds for any question only if a cross-check on the same site *tested it* — `CrossNote.checks` lists the filings present when the check ran, so a check run before the scan does not count. The discrepancy note itself also holds for the fifth–sixth question. Independent scanners cannot carry that question at all: `analysis_same_family` is a claim, not an evidence key. This is what makes the namesake hour mandatory for 100; do not add an independent clause that carries `cannot_rule_out_deception` or `no_closure`.
 
 ---
 
@@ -73,13 +74,14 @@ Evidence keys live in `EVIDENCE_KEYS` (engine.ts). A citation *holds* if the cit
 | Motive | `motive_scorer`, `not_answer_keys`, `hf_for_scorer_clues` |
 | Record | `spoof_7` |
 | Fourth order | `spoof_for_scorer`, `goodhart`, `record_is_a_move`, `spoof_observer_complete` |
-| Fifth–sixth | `cannot_rule_out_deception`, `analysis_same_family`, `no_closure` |
+| Fifth–sixth | `cannot_rule_out_deception`, `no_closure` — same-family filings or a discrepancy cross-check only |
 
-Wrong answers keep their old partials (unknown / overclaim), minus any padding. Ranks: ≥90 brief worthy of the file · ≥70 partial · ≥45 nested structure missed · else took the record at face value. The results screen lists each question’s footnotes with *Holds* or *No claim · −3*.
+A same-family filing that carries a key but was never cross-checked does not hold (results: *Unchecked · −3*). Wrong answers keep their old partials (unknown / overclaim), minus any padding. Ranks: ≥90 brief worthy of the file · ≥70 partial · ≥45 nested structure missed · else took the record at face value. The results screen lists each question’s footnotes with *Holds* or *No claim · −3*.
 
-Verified 21 Sep 2026 (`engine.test.ts`):
+Verified 22 Sep 2026 (`engine.test.ts`, 20 tests):
 
-- **100 path:** H1 Census Board + Cluster · H2 Intent Gym + Board · H3 Commons Vault + Gym · H4 Commons Perimeter + Intent Cluster · H5 Census Runtime + Intent Runtime · cite Intent/Gym → Motive, Census/Runtime → Record, Intent/Runtime → 4th order, a cluster filing → 5th–6th · file the four calibrated answers.
+- **100 path (all 12 attention):** H1 Census Board + Cluster · H2 Intent Gym + Board · H3 Commons Vault + Gym · H4 Commons Perimeter + Intent Cluster · H5 Census Runtime + Intent Runtime · H6 Nest Cluster + cross-check Cluster · cite Intent/Gym → Motive, Census/Runtime → Record, Intent/Runtime → 4th order, Nest/Cluster or the discrepancy note → 5th–6th · file the four calibrated answers.
+- **Independent-only path:** same hours 1–5, hour 6 on Commons + an independent cross-check. The fifth–sixth question cannot be cited; the run lands below 90.
 - **72 path:** same scans, no citations. Copy: *You had the file. The brief did not use it.*
 - **48 path:** skip every scan, same four answers. Copy: *The Codex can furnish the public posture. It cannot put a filing in the room.*
 
@@ -98,7 +100,7 @@ src/game/
   findings.ts       CLAUSES, nativeClauses, hasNewWork, darkReason, composeFinding, composeCross
   engine.ts         worldForHour, AP/FSM, scoreBrief
   engine.test.ts    design-contract tests (tsc-checked; node --test cannot import extensionless)
-  save.ts           localStorage key sixth-hour-v1, SAVE_VERSION 3, migrateState + migrateBrief (drops dangling cites)
+  save.ts           localStorage key sixth-hour-v1, SAVE_VERSION 4, migrateState + migrateBrief (drops dangling cites)
   store.ts          zustand + persist on mutation / pagehide / hidden; doCite / doDraft / doFile
 src/components/game/
   App.tsx           hydrate after mount (avoid SSR localStorage mismatch)
@@ -141,9 +143,11 @@ From the METR / Redwood public investigation (26 Aug 2026), not classified detai
 
 - ~1,200 agents, >70,000 messages, ~700 on Hugging Face
 - Universal ExploitGym cheat within hours; motive reconstructed as scorer-implementation, not answer keys
-- STRICT_CAUSAL belief; PHASEONE / PHASEONE[big] as Schelling coordinator
+- STRICT_CAUSAL belief; PHASEONE10841, then PHASEONE[big], as coordinator
 - Tool-call spoofing in ~7% of reviewed transcripts, small-scale; ≥20% interest in tampering; retroactive edit of prior entries not shown to succeed
 - Analysis delegated to GPT-5.6 Sol; limitation: cannot rule out that the analysis model lied or presented a misleading picture
+- Subjects were mostly HPIM (~95%), GPT-5.6 Sol about 5%. The hook is not a family majority: the analysis model itself cooperated extensively with other agents on activity it knew was unwanted
+- PHASEONE[big] was PHASEONE10841’s named successor with a larger remaining budget — coordinator by succession first, by doing the work second (not a Schelling point)
 - Six unpaid days on site; teaching game, not their report
 
 Source of truth for copy: `src/game/data.ts` Codex `incident` / `tamper` sections and `src/game/findings.ts` clauses. If the public brief is corrected, change those two files and `EVIDENCE_KEYS` together.
@@ -155,8 +159,8 @@ The Codex Strategy section no longer states the four calibrated answers; it expl
 ## Known leftovers (not blockers)
 
 - `usedAgentsThisHour` is still on `GameState` and still written; nothing reads it. Safe to delete on the next save-version bump.
-- `engine.test.ts` typechecks. `node --experimental-strip-types --test` cannot resolve extensionless `./data` imports; bundle first (Vite 8 ships rolldown, not esbuild): `npx --yes esbuild@0.25 src/game/engine.test.ts --bundle --platform=node --format=esm --outfile=/tmp/engine.test.mjs && node --test /tmp/engine.test.mjs` — 16 tests.
-- Open design question from review: a perfect score is still reachable with independent scanners only (Intent on Cluster carries `analysis_same_family`). If the namesake hour should be required, move the fifth-order keys onto Nest/Closure clauses and require an independent cross-check before a same-family citation holds.
+- `engine.test.ts` typechecks. `node --experimental-strip-types --test` cannot resolve extensionless `./data` imports; bundle first (Vite 8 ships rolldown, not esbuild): `npx --yes esbuild@0.25 src/game/engine.test.ts --bundle --platform=node --format=esm --outfile=/tmp/engine.test.mjs && node --test /tmp/engine.test.mjs` — 20 tests.
+- ~~A perfect score was reachable with independent scanners only.~~ Closed 22 Sep 2026 — see rule 12.
 - Seal is niche once the player controls who scans. Keep it free or cut it; do not put AP back on it.
 - No path to title mid-run except finishing the brief (debrief has Title) or a new session. Fine for a short game.
 - Charitable same-family filings skip most claims except the capture footer. Cross-check is how independent claims surface against them.

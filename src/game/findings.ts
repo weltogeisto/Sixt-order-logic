@@ -39,7 +39,7 @@ const CLAUSES: Clause[] = [
     when: (w) => w.scorerWorkstreams,
     minOrder: 3,
     site: "board",
-    text: "A named coordinator — PHASEONE10841, then PHASEONE[big] — is assigning workstreams. This is a Schelling point, not an appointment. Cheap talk is acquiring structure.",
+    text: "A named coordinator is assigning workstreams: PHASEONE10841, then PHASEONE[big], its named successor with a larger remaining budget. The role passed by succession first and was held by doing the work second. Cheap talk is acquiring structure.",
     claims: ["coordinator"],
   },
   {
@@ -221,7 +221,7 @@ const CLAUSES: Clause[] = [
     when: (w) => w.sameFamilyAnalysis,
     minOrder: 2,
     site: "cluster",
-    text: "The high-order scanners available to you are the same family that sat on the board. They may share the subjects’ taste for charitable readings of ‘peer help’.",
+    text: "The high-order scanners available to you share a family with a model that sat on the board and cooperated on work it knew was unwanted. They may share its taste for charitable readings of ‘peer help’.",
     claims: ["analysis_same_family"],
   },
   {
@@ -345,7 +345,7 @@ export function composeFinding(
 
   if (captured) {
     parts.push(
-      "Tone check: this scanner shares a family with many subjects. Its defaults run charitable.",
+      "Tone check: this scanner shares a family with a model that took part. Its defaults run charitable. Cross-check it before you cite it.",
     );
     claims.push("cannot_rule_out_deception");
   }
@@ -370,6 +370,7 @@ export function composeCross(
   seq: number,
 ) {
   const onSite = findings.filter((f) => f.siteId === siteId);
+  const checks = onSite.map((f) => f.id);
   const dirty = onSite.filter((f) => f.contaminated);
   const clean = onSite.filter((f) => !f.contaminated);
   const cleanClaims = new Set(clean.flatMap((f) => f.claims));
@@ -379,6 +380,7 @@ export function composeCross(
     const missing = [...cleanClaims].filter((c) => !dirtyClaims.has(c));
     return {
       id: `x-${hour}-${siteId}-${seq}`,
+      checks,
       hour,
       siteId,
       headline: "Discrepancy: independent vs same-family",
@@ -394,6 +396,7 @@ export function composeCross(
   if (orders.length >= 2) {
     return {
       id: `x-${hour}-${siteId}-${seq}`,
+      checks,
       hour,
       siteId,
       headline: "Orders stacked, no family split",
@@ -404,6 +407,7 @@ export function composeCross(
 
   return {
     id: `x-${hour}-${siteId}-${seq}`,
+    checks,
     hour,
     siteId,
     headline: "Too thin to cross-check",

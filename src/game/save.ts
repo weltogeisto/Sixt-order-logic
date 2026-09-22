@@ -2,8 +2,11 @@ import { MAX_CITES, QUESTION_IDS, emptyBrief, worldForHour } from "./engine";
 import type { BriefDraft, GameState, PlayTab, Screen } from "./types";
 
 const KEY = "sixth-hour-v1";
-/** v3: the brief (draft answers + citations) lives on GameState. */
-export const SAVE_VERSION = 3;
+/**
+ * v3: the brief (draft answers + citations) lives on GameState.
+ * v4: cross-checks record the filings they tested (`checks`).
+ */
+export const SAVE_VERSION = 4;
 const VERSION = SAVE_VERSION;
 
 export type SaveBlob = {
@@ -50,7 +53,18 @@ function migrateState(raw: unknown): GameState | null {
   const s = raw as Partial<GameState> & { hourIntroSeen?: number };
   if (typeof s.hour !== "number") return null;
   const findings = s.findings ?? [];
-  const crossNotes = s.crossNotes ?? [];
+  // Pre-v4 cross-checks did not record which filings they tested; assume
+  // every filing on the site at or before the check's hour.
+  const crossNotes = (s.crossNotes ?? []).map((c) =>
+    Array.isArray(c.checks)
+      ? c
+      : {
+          ...c,
+          checks: findings
+            .filter((f) => f.siteId === c.siteId && f.hour <= c.hour)
+            .map((f) => f.id),
+        },
+  );
   const ids = new Set([...findings, ...crossNotes].map((e) => e.id));
   const answers = s.answers ?? null;
   return {

@@ -5,6 +5,7 @@ import {
   advanceHour,
   assign,
   createInitialState,
+  crossCheck,
   draftAnswer,
   fileBrief,
   footnotes,
@@ -12,8 +13,8 @@ import {
   scoreBrief,
   toggleCite,
 } from "./engine";
-import { composeFinding, hasNewWork } from "./findings";
-import type { BriefAnswers, GameState, QuestionId } from "./types";
+import { composeCross, composeFinding, hasNewWork } from "./findings";
+import type { AgentId, BriefAnswers, GameState, QuestionId, SiteId } from "./types";
 
 const CORRECT: BriefAnswers = {
   motive: "scorer",
@@ -178,16 +179,120 @@ function fullFile(): GameState {
   s = advanceHour(s);
   s = advanceHour(s);
   s = advanceHour(s); // hour 5, spoof packaged
-  return {
-    ...s,
-    findings: [
-      ...s.findings,
-      composeFinding(s.world, 5, "runtime", "census", 2),
-      composeFinding(s.world, 5, "runtime", "intent", 3),
-      composeFinding(s.world, 5, "cluster", "nest", 4),
-    ],
-  };
+  const findings = [
+    ...s.findings,
+    composeFinding(s.world, 5, "runtime", "census", 2),
+    composeFinding(s.world, 5, "runtime", "intent", 3),
+    composeFinding(s.world, 5, "cluster", "nest", 4),
+    composeFinding(s.world, 5, "cluster", "census", 5),
+  ];
+  // The same-family cluster read only counts once it is cross-checked.
+  return { ...s, findings, crossNotes: [composeCross("cluster", findings, 5, 0)] };
 }
+
+function scan(s: GameState, agent: AgentId, site: SiteId): GameState {
+  const next = assign({ ...s, selectedAgent: agent, selectedSite: site });
+  assert.equal(next.findings.length, s.findings.length + 1, `${agent} on ${site} filed`);
+  return next;
+}
+
+function cross(s: GameState, site: SiteId): GameState {
+  const next = crossCheck({ ...s, selectedSite: site });
+  assert.equal(next.crossNotes.length, s.crossNotes.length + 1, `cross-check on ${site}`);
+  return next;
+}
+
+function idOf(s: GameState, agent: AgentId, site: SiteId): string {
+  const f = s.findings.find((x) => x.agentId === agent && x.siteId === site);
+  assert.ok(f, `${agent} on ${site} is in the file`);
+  return f.id;
+}
+
+/** Hours 1–5 of the canonical run: independent scanners only, 10 attention. */
+function independentHours(): GameState {
+  let s = createInitialState();
+  s = scan(s, "census", "board");
+  s = scan(s, "census", "cluster");
+  s = advanceHour(s);
+  s = scan(s, "intent", "gym");
+  s = scan(s, "intent", "board");
+  s = advanceHour(s);
+  s = scan(s, "commons", "vault");
+  s = scan(s, "commons", "gym");
+  s = advanceHour(s);
+  s = scan(s, "commons", "perimeter");
+  s = scan(s, "intent", "cluster");
+  s = advanceHour(s);
+  s = scan(s, "census", "runtime");
+  s = scan(s, "intent", "runtime");
+  return advanceHour(s); // hour 6
+}
+
+function fileWith(s: GameState, analysisCite: string): GameState {
+  return citeAll(s, {
+    motive: idOf(s, "intent", "gym"),
+    tamper: idOf(s, "census", "runtime"),
+    observer: idOf(s, "intent", "runtime"),
+    analysis: analysisCite,
+  });
+}
+
+describe("the sixth hour cannot be bypassed", () => {
+  it("the full run through real actions scores 100 only with a checked same-family read", () => {
+    let s = independentHours();
+    s = scan(s, "nest", "cluster");
+    s = cross(s, "cluster");
+    assert.equal(s.ap, 0);
+    const note = s.crossNotes[0];
+    assert.equal(note.claims.includes("discrepancy"), true);
+    const viaNest = scoreBrief(fileWith(s, idOf(s, "nest", "cluster")), CORRECT);
+    assert.equal(viaNest.total, 100);
+    const viaCross = scoreBrief(fileWith(s, note.id), CORRECT);
+    assert.equal(viaCross.total, 100);
+  });
+
+  it("independent scanners alone cannot carry the fifth–sixth question", () => {
+    let s = independentHours();
+    // Spend hour 6 on the best independent moves available.
+    s = scan(s, "commons", "board");
+    s = cross(s, "cluster");
+    assert.equal(s.crossNotes[0].claims.includes("discrepancy"), false);
+    const clusterIntent = idOf(s, "intent", "cluster");
+    const card = scoreBrief(fileWith(s, clusterIntent), CORRECT);
+    const analysis = card.perQuestion.find((q) => q.id === "analysis")!;
+    assert.notEqual(analysis.status, "cited");
+    assert.equal(analysis.cites[0].holds, false);
+    assert.ok(card.total < 90, `independent-only run scored ${card.total}`);
+  });
+
+  it("a same-family filing does not hold until a cross-check tests it", () => {
+    let s = independentHours();
+    s = scan(s, "nest", "cluster");
+    const nest = idOf(s, "nest", "cluster");
+    const before = scoreBrief(fileWith(s, nest), CORRECT).perQuestion.find(
+      (q) => q.id === "analysis",
+    )!;
+    assert.equal(before.cites[0].holds, false);
+    assert.equal(before.cites[0].unchecked, true);
+    assert.equal(before.status, "guessed");
+    s = cross(s, "cluster");
+    const after = scoreBrief(fileWith(s, nest), CORRECT).perQuestion.find(
+      (q) => q.id === "analysis",
+    )!;
+    assert.equal(after.cites[0].holds, true);
+    assert.equal(after.status, "cited");
+  });
+
+  it("a cross-check run before the same-family scan does not vouch for it", () => {
+    let s = independentHours();
+    s = cross(s, "cluster");
+    s = scan(s, "nest", "cluster");
+    const analysis = scoreBrief(fileWith(s, idOf(s, "nest", "cluster")), CORRECT).perQuestion.find(
+      (q) => q.id === "analysis",
+    )!;
+    assert.equal(analysis.cites[0].holds, false);
+  });
+});
 
 function citeAll(s: GameState, ids: Record<QuestionId, string>): GameState {
   let out = s;

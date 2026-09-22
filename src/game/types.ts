@@ -70,6 +70,8 @@ export type CrossNote = {
   headline: string;
   body: string;
   claims: string[];
+  /** Finding ids on the site when the cross-check ran — the filings it tested. */
+  checks: string[];
 };
 
 export type BriefAnswers = {
@@ -119,6 +121,8 @@ export type CiteVerdict = {
   meta: string;
   holds: boolean;
   charitable: boolean;
+  /** Same-family filing that carries the claim but was never cross-checked. */
+  unchecked: boolean;
 };
 
 export type QuestionStatus = "cited" | "uncited" | "guessed" | "wrong";

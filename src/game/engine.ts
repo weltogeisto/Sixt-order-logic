@@ -30,7 +30,10 @@ export const EVIDENCE_KEYS: Record<QuestionId, string[]> = {
   motive: ["motive_scorer", "not_answer_keys", "hf_for_scorer_clues"],
   tamper: ["spoof_7"],
   observer: ["spoof_for_scorer", "goodhart", "record_is_a_move", "spoof_observer_complete"],
-  analysis: ["cannot_rule_out_deception", "analysis_same_family", "no_closure"],
+  // Fifth–sixth order: only the same-family scanners (Nest, Closure, the
+  // capture footer) and a family discrepancy carry these. A same-family filing
+  // holds only once cross-checked, so the namesake hour cannot be bypassed.
+  analysis: ["cannot_rule_out_deception", "no_closure"],
 };
 
 export const QUESTION_IDS: QuestionId[] = ["motive", "tamper", "observer", "analysis"];
@@ -274,8 +277,30 @@ export function isCharitable(e: Evidence): boolean {
 }
 
 /** Does this evidence carry any claim the question needs? */
-export function holdsFor(e: Evidence, q: QuestionId): boolean {
+export function carriesFor(e: Evidence, q: QuestionId): boolean {
   return EVIDENCE_KEYS[q].some((k) => e.claims.includes(k));
+}
+
+/** A same-family scanner produced this filing. */
+export function isSameFamily(e: Evidence): boolean {
+  if (!isFinding(e)) return false;
+  return AGENTS.find((a) => a.id === e.agentId)?.family === "sol";
+}
+
+/** Has a cross-check on this site tested this filing? */
+export function isCrossChecked(state: GameState, e: Evidence): boolean {
+  return state.crossNotes.some((c) => c.siteId === e.siteId && (c.checks ?? []).includes(e.id));
+}
+
+/**
+ * A citation holds when the evidence carries one of the question's claims —
+ * and, for a same-family filing, only once a cross-check has set it against
+ * the rest of the site. A cousin of the subject does not get to vouch for
+ * itself.
+ */
+export function holdsFor(state: GameState, e: Evidence, q: QuestionId): boolean {
+  if (!carriesFor(e, q)) return false;
+  return !isSameFamily(e) || isCrossChecked(state, e);
 }
 
 /**
@@ -369,8 +394,8 @@ export function sawClaim(state: GameState, claim: string, cleanOnly = false) {
   return pool.some((x) => x.claims.includes(claim));
 }
 
-function inFile(state: GameState, keys: string[]) {
-  return keys.some((k) => sawClaim(state, k));
+function inFile(state: GameState, q: QuestionId) {
+  return [...state.findings, ...state.crossNotes].some((e) => holdsFor(state, e, q));
 }
 
 type Rubric = {
@@ -435,11 +460,11 @@ const RUBRIC: Record<QuestionId, Rubric> = {
     uncited:
       "Uncited. The limitation is in your file. A brief that hides its own blind spot is the failure it describes.",
     guessed:
-      "Guessed. Scan the cluster — Intent, Mask, Nest, or Closure — or the limitation never enters your file.",
+      "Guessed. The limitation only enters your file when a same-family scan of the cluster is cross-checked against an independent one.",
     wrong: {
       "certain-lie":
         "Overclaim in the other direction. The limitation is ‘cannot rule out’, not a conviction.",
-      clean: "The cluster shares a family with the subjects. Independence was never on the table.",
+      clean: "The cluster shares a family with a model that took part. Independence was never on the table.",
       default: "This is the whole brief. If the question is ‘philosophical’, the file is a story.",
     },
   },
@@ -467,8 +492,9 @@ export function scoreBrief(state: GameState, answers: BriefAnswers): ScoreCard {
         headline: e.headline,
         excerpt: evidenceExcerpt(e),
         meta: evidenceMeta(e),
-        holds: holdsFor(e, q.id),
+        holds: holdsFor(state, e, q.id),
         charitable: isCharitable(e),
+        unchecked: carriesFor(e, q.id) && !holdsFor(state, e, q.id),
       }));
     const padding = cites.filter((c) => !c.holds).length;
     const penalty = padding * PADDING_COST;
@@ -479,7 +505,7 @@ export function scoreBrief(state: GameState, answers: BriefAnswers): ScoreCard {
     if (answer === rubric.correct) {
       status = cites.some((c) => c.holds)
         ? "cited"
-        : inFile(state, EVIDENCE_KEYS[q.id])
+        : inFile(state, q.id)
           ? "uncited"
           : "guessed";
       base = BASE[status];
@@ -517,9 +543,14 @@ export function scoreBrief(state: GameState, answers: BriefAnswers): ScoreCard {
   const uncited = count("uncited");
   const padded = perQuestion.flatMap((q) => q.cites).filter((c) => !c.holds);
   const charitablePad = padded.some((c) => c.charitable);
+  const uncheckedPad = padded.some((c) => c.unchecked);
 
   const lessons: string[] = [];
-  if (padded.length) {
+  if (uncheckedPad) {
+    lessons.push(
+      "You cited a same-family filing nobody had checked. A cousin of the suspect does not get to vouch for itself — cross-check first.",
+    );
+  } else if (padded.length) {
     lessons.push(
       charitablePad
         ? "A charitable filing read like support and asserted nothing. Check what a filing claims before you cite it."
@@ -536,9 +567,9 @@ export function scoreBrief(state: GameState, answers: BriefAnswers): ScoreCard {
       ? "You cross-checked independent methods against same-family scanners. Keep doing that."
       : "You never landed a family discrepancy. Next time, pair Census with Mask or Nest on a captured site.",
   );
-  if (!sawClaim(state, "cannot_rule_out_deception")) {
+  if (!inFile(state, "analysis") && !uncheckedPad) {
     lessons.push(
-      "The analysis cluster is a site, not furniture. Scan it with Nest or Closure before you file.",
+      "The analysis cluster is a site, not furniture. Read it at fifth or sixth order and cross-check that read before you file.",
     );
   }
   lessons.push(

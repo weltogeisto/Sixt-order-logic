@@ -120,7 +120,7 @@ export function Debrief() {
                       )}
                     >
                       {c.holds ? <Check className="size-3.5" /> : <Minus className="size-3.5" />}
-                      {c.holds ? "Holds" : "No claim · −3"}
+                      {c.holds ? "Holds" : c.unchecked ? "Unchecked · −3" : "No claim · −3"}
                     </span>
                   </li>
                 ))}
