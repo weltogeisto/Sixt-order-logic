@@ -10,10 +10,21 @@ export function App() {
   const screen = useGame((s) => s.screen);
   const hydrate = useGame((s) => s.hydrate);
   const persist = useGame((s) => s.persist);
+  const hour = useGame((s) => s.state?.hour ?? null);
+  const filed = useGame((s) => Boolean(s.state?.answers));
 
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  // The sky follows the clock during a run; title and Codex sit at night.
+  useEffect(() => {
+    const root = document.documentElement;
+    const inRun = screen === "play" || screen === "briefing" || screen === "debrief";
+    const h = !inRun || hour === null ? null : filed ? 6 : hour;
+    if (h === null) delete root.dataset.hour;
+    else root.dataset.hour = String(h);
+  }, [screen, hour, filed]);
 
   useEffect(() => {
     const onHide = () => {

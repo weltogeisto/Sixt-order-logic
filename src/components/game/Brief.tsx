@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { ArrowUpRight, X } from "lucide-react";
 import { QUESTIONS } from "@/game/data";
 import {
   MAX_CITES,
@@ -29,6 +29,26 @@ function statusLine(answered: boolean, cites: number) {
   return `${a} · ${c}`;
 }
 
+/** Four segments: how many questions are answered and cited. Never whether they are right. */
+export function BriefMeter({ ready, answered }: { ready: number; answered: number }) {
+  return (
+    <span className="flex items-center gap-2" aria-label={`${ready} of 4 ready`}>
+      <span className="flex gap-1" aria-hidden>
+        {[0, 1, 2, 3].map((i) => (
+          <span
+            key={i}
+            className={cn(
+              "h-1.5 w-4 rounded-full transition-colors duration-300",
+              i < ready ? "bg-accent" : i < answered ? "bg-muted/60" : "bg-border",
+            )}
+          />
+        ))}
+      </span>
+      <span className="text-sm tabular-nums text-muted">{ready}/4 ready</span>
+    </span>
+  );
+}
+
 /**
  * The brief on the desk: four clauses, always visible. Each clause shows
  * the drafted answer (or the question until there is one) and its
@@ -43,24 +63,21 @@ export function BriefPanel({ onOpen }: { onOpen: (q: QuestionId) => void }) {
   const untouched = prog.answered === 0 && notes.size === 0;
 
   return (
-    <section
-      aria-labelledby="brief-panel-title"
-      className="rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]"
-    >
-      <div className="flex items-baseline justify-between gap-3">
+    <section aria-labelledby="brief-panel-title" className="panel p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 id="brief-panel-title" className="font-display text-2xl tracking-tight text-fg">
           The brief
         </h2>
-        <p className="text-sm tabular-nums text-muted">{prog.ready} of 4 ready</p>
+        <BriefMeter ready={prog.ready} answered={prog.answered} />
       </div>
       <p className="mt-1 text-sm leading-relaxed text-muted">
         {untouched
           ? "You file this at 21:00. Read a filing, then cite it to the question it answers."
-          : "Draft answers any time. Citations are what the brief is scored on."}
+          : "Draft answers any time. The brief is scored on its citations."}
       </p>
 
-      <ul className="mt-4 grid grid-cols-2 gap-2">
-        {QUESTIONS.map((q) => {
+      <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {QUESTIONS.map((q, i) => {
           const cites = brief.cites[q.id];
           const answer = optionLabel(q.id, brief.answers[q.id]);
           const ready = questionReady(brief, q.id);
@@ -71,32 +88,41 @@ export function BriefPanel({ onOpen }: { onOpen: (q: QuestionId) => void }) {
                 type="button"
                 onClick={() => onOpen(q.id)}
                 aria-label={`${q.title}. ${statusLine(Boolean(answer), cites.length)}. Open in the brief.`}
-                className="group relative flex h-full w-full flex-col rounded-xl bg-raised py-3 pr-3 pl-4 text-left transition-shadow duration-150 hover:shadow-[var(--shadow-border-hover)]"
+                className="group relative flex h-full w-full flex-col rounded-2xl bg-raised py-3.5 pr-3.5 pl-5 text-left shadow-[var(--shadow-border)] transition-[box-shadow,background-color] duration-150 hover:bg-overlay hover:shadow-[var(--shadow-border-hover)]"
               >
                 <span
                   aria-hidden
                   className={cn(
-                    "absolute inset-y-3 left-0 w-0.5 rounded-full transition-colors duration-200",
+                    "absolute inset-y-3.5 left-0 w-0.5 rounded-full transition-colors duration-300",
                     ready ? "bg-accent" : touched ? "bg-muted" : "bg-border",
                   )}
                 />
                 <span className="flex items-baseline justify-between gap-2">
-                  <span className="font-display text-lg leading-tight text-fg">{q.title}</span>
-                  <span className="flex gap-1" aria-hidden>
-                    {cites.map((id) => (
-                      <Footnote key={id} n={notes.get(id) ?? 0} />
-                    ))}
+                  <span className="flex items-baseline gap-2">
+                    <span className="font-mono text-xs text-subtle tabular-nums">{i + 1}</span>
+                    <span className="font-display text-lg leading-tight text-fg">{q.title}</span>
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className="flex gap-1" aria-hidden>
+                      {cites.map((id) => (
+                        <Footnote key={id} n={notes.get(id) ?? 0} />
+                      ))}
+                    </span>
+                    <ArrowUpRight
+                      aria-hidden
+                      className="size-3.5 text-subtle opacity-0 transition-opacity group-hover:opacity-100"
+                    />
                   </span>
                 </span>
                 <span
                   className={cn(
-                    "mt-1 line-clamp-2 text-xs leading-relaxed",
+                    "mt-1 line-clamp-2 text-sm leading-snug",
                     answer ? "text-fg" : "text-muted",
                   )}
                 >
                   {answer ?? q.prompt}
                 </span>
-                <span className="mt-auto pt-2 text-xs text-muted">
+                <span className="mt-auto pt-2 text-xs text-subtle">
                   {statusLine(Boolean(answer), cites.length)}
                 </span>
               </button>
@@ -133,7 +159,7 @@ export function BriefEditor({ focus }: { focus?: QuestionId }) {
 
   return (
     <div className="flex flex-col gap-12">
-      {QUESTIONS.map((q) => {
+      {QUESTIONS.map((q, qi) => {
         const cites = brief.cites[q.id];
         const headingId = `${uid}-${q.id}-h`;
         return (
@@ -145,7 +171,8 @@ export function BriefEditor({ focus }: { focus?: QuestionId }) {
             aria-labelledby={headingId}
             className="scroll-mt-4"
           >
-            <h3 id={headingId} className="font-display text-2xl tracking-tight text-fg">
+            <p className="eyebrow">Question {qi + 1} of 4</p>
+            <h3 id={headingId} className="mt-1 font-display text-2xl tracking-tight text-fg">
               {q.title}
             </h3>
             <p className="mt-1 text-sm leading-relaxed text-muted">{q.prompt}</p>
@@ -153,18 +180,18 @@ export function BriefEditor({ focus }: { focus?: QuestionId }) {
             <fieldset className="mt-4" disabled={locked}>
               <legend className="sr-only">Your answer to: {q.prompt}</legend>
               <div className="flex flex-col gap-2">
-                {q.options.map((opt) => {
+                {q.options.map((opt, oi) => {
                   const on = brief.answers[q.id] === opt.id;
                   return (
                     <label
                       key={opt.id}
                       className={cn(
-                        "flex cursor-pointer gap-3 rounded-xl px-4 py-3 text-sm leading-relaxed transition-[background-color,box-shadow] duration-150",
+                        "flex cursor-pointer items-start gap-3 rounded-2xl px-4 py-3.5 text-sm leading-relaxed transition-[background-color,box-shadow,transform] duration-150 active:scale-[0.995]",
                         "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring",
                         on
                           ? "bg-accent text-accent-fg"
-                          : "bg-raised text-fg shadow-[var(--shadow-border)] hover:shadow-[var(--shadow-border-hover)]",
-                        locked && "cursor-default",
+                          : "bg-raised text-fg shadow-[var(--shadow-border)] hover:bg-overlay hover:shadow-[var(--shadow-border-hover)]",
+                        locked && "cursor-default active:scale-100",
                       )}
                     >
                       <input
@@ -178,11 +205,15 @@ export function BriefEditor({ focus }: { focus?: QuestionId }) {
                       <span
                         aria-hidden
                         className={cn(
-                          "mt-1.5 size-2.5 shrink-0 rounded-full",
-                          on ? "bg-accent-fg" : "shadow-[inset_0_0_0_1px_var(--color-muted)]",
+                          "grid size-6 shrink-0 place-items-center rounded-full font-mono text-xs",
+                          on
+                            ? "bg-accent-fg text-accent"
+                            : "text-muted shadow-[inset_0_0_0_1px_var(--color-border)]",
                         )}
-                      />
-                      <span>{opt.label}</span>
+                      >
+                        {String.fromCharCode(65 + oi)}
+                      </span>
+                      <span className="pt-0.5">{opt.label}</span>
                     </label>
                   );
                 })}
@@ -190,9 +221,9 @@ export function BriefEditor({ focus }: { focus?: QuestionId }) {
             </fieldset>
 
             <div className="mt-5">
-              <p className="text-xs text-muted">
-                Citations{" "}
-                <span className="tabular-nums">
+              <p className="flex items-center gap-2 text-xs text-muted">
+                Citations
+                <span className="tabular-nums text-subtle">
                   {cites.length}/{MAX_CITES}
                 </span>
               </p>
@@ -204,7 +235,7 @@ export function BriefEditor({ focus }: { focus?: QuestionId }) {
                     return (
                       <li
                         key={id}
-                        className="flex items-start gap-3 rounded-lg bg-raised px-3 py-2.5"
+                        className="flex animate-rise items-start gap-3 rounded-xl bg-raised px-3.5 py-3 shadow-[var(--shadow-border)]"
                       >
                         <Footnote n={notes.get(id) ?? 0} className="mt-1.5 text-base" />
                         <span className="min-w-0 flex-1">
@@ -234,7 +265,7 @@ export function BriefEditor({ focus }: { focus?: QuestionId }) {
                   })}
                 </ol>
               ) : (
-                <p className="mt-2 text-sm leading-relaxed text-muted">
+                <p className="mt-2 rounded-xl border border-dashed border-border px-3.5 py-3 text-sm leading-relaxed text-muted">
                   No citation yet. Open a filing in the case file and cite it for {q.title}.
                 </p>
               )}
@@ -255,21 +286,22 @@ export function BriefDialog({ focus, onClose }: { focus: QuestionId | null; onCl
   return (
     <Dialog.Root open={focus !== null} onOpenChange={(o) => (!o ? onClose() : undefined)}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-bg/80 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-bg/75 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0" />
         <Dialog.Content
           className={cn(
-            "fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-surface shadow-[var(--shadow-border-hover)] outline-none",
-            "data-[state=open]:animate-in data-[state=open]:slide-in-from-right-8 data-[state=open]:fade-in-0 data-[state=open]:duration-200",
+            "fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col bg-surface shadow-[var(--shadow-float)] outline-none sm:rounded-l-3xl",
+            "data-[state=open]:animate-in data-[state=open]:slide-in-from-right-8 data-[state=open]:fade-in-0 data-[state=open]:duration-300",
             "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:duration-150",
           )}
         >
-          <header className="flex items-start justify-between gap-4 border-b border-border px-6 pt-[max(1rem,env(safe-area-inset-top))] pb-4">
+          <header className="flex items-start justify-between gap-4 border-b border-border px-6 pt-[max(1.25rem,env(safe-area-inset-top))] pb-4">
             <div>
               <Dialog.Title className="font-display text-3xl tracking-tight text-fg">
                 The brief
               </Dialog.Title>
-              <Dialog.Description className="mt-1 text-sm text-muted">
-                {prog.ready} of 4 ready. Answers stay drafts until you file at 21:00.
+              <Dialog.Description className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+                <BriefMeter ready={prog.ready} answered={prog.answered} />
+                <span>Drafts until you file at 21:00.</span>
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
@@ -278,7 +310,7 @@ export function BriefDialog({ focus, onClose }: { focus: QuestionId | null; onCl
               </Button>
             </Dialog.Close>
           </header>
-          <div className="flex-1 overflow-y-auto overscroll-contain px-6 pt-6 pb-[max(2rem,env(safe-area-inset-bottom))]">
+          <div className="scroll-quiet flex-1 overflow-y-auto overscroll-contain px-6 pt-6 pb-[max(2rem,env(safe-area-inset-bottom))]">
             <BriefEditor focus={focus ?? undefined} />
           </div>
         </Dialog.Content>

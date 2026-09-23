@@ -1,39 +1,51 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
+  ArrowRight,
   BookOpen,
+  Compass,
   FolderClosed,
   GitCompare,
+  Keyboard,
   Lock,
   Map as MapIcon,
+  Radar,
   ScrollText,
-  Shield,
   Users,
 } from "lucide-react";
 import { AGENTS, HOURS, SITES } from "@/game/data";
 import {
   assignBlock,
-  agentSpent,
   briefProgress,
-  canCross,
   crossBlock,
   isAgentUnlocked,
   quarantineBlock,
 } from "@/game/engine";
+import { liveSites, nextStep, type Guide } from "@/game/guide";
 import { useGame } from "@/game/store";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Modal, ModalClose } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import type { PlayTab, QuestionId } from "@/game/types";
-import { BriefDialog, BriefEditor, BriefPanel } from "./Brief";
+import type { AgentId, PlayTab, QuestionId } from "@/game/types";
+import { BriefDialog, BriefEditor, BriefMeter, BriefPanel } from "./Brief";
 import { CaseStrip, FindingCard } from "./CaseFile";
 import { OrderMark } from "./OrderMark";
-import { SiteMap } from "./SiteMap";
+import { MapLegend, SiteMap } from "./SiteMap";
 
 const TABS: { id: PlayTab; label: string; icon: typeof MapIcon }[] = [
   { id: "map", label: "Surface", icon: MapIcon },
   { id: "agents", label: "Scanners", icon: Users },
   { id: "brief", label: "Brief", icon: ScrollText },
   { id: "file", label: "File", icon: FolderClosed },
+];
+
+const SHORTCUTS: [string, string][] = [
+  ["1 – 6", "Select a scanner"],
+  ["S", "Scan the selected site"],
+  ["C", "Cross-check the selected site"],
+  ["B", "Open the brief"],
+  ["N", "Next hour / file the brief"],
+  ["?", "Show these shortcuts"],
 ];
 
 export function PlayShell() {
@@ -43,16 +55,61 @@ export function PlayShell() {
   const setScreen = useGame((s) => s.setScreen);
   const doAdvance = useGame((s) => s.doAdvance);
   const doAssign = useGame((s) => s.doAssign);
+  const doCross = useGame((s) => s.doCross);
+  const selectAgent = useGame((s) => s.selectAgent);
+  const selectSite = useGame((s) => s.selectSite);
   const doDismissIntro = useGame((s) => s.doDismissIntro);
   const doClearFlash = useGame((s) => s.doClearFlash);
   const [confirm, setConfirm] = useState<"advance" | "quarantine" | null>(null);
   const [briefFocus, setBriefFocus] = useState<QuestionId | null>(null);
+  const [help, setHelp] = useState(false);
 
   useEffect(() => {
     if (!state?.flash) return;
-    const t = window.setTimeout(() => doClearFlash(), 2800);
+    const t = window.setTimeout(() => doClearFlash(), 3200);
     return () => window.clearTimeout(t);
   }, [state?.flash, doClearFlash]);
+
+  const requestAdvance = useCallback(() => {
+    const s = useGame.getState().state;
+    if (!s) return;
+    if (s.hour >= 6) {
+      setScreen("debrief");
+      return;
+    }
+    if (s.ap > 0) setConfirm("advance");
+    else doAdvance();
+  }, [doAdvance, setScreen]);
+
+  const openBrief = useCallback(() => {
+    if (window.matchMedia("(min-width: 1024px)").matches) setBriefFocus("motive");
+    else setPlayTab("brief");
+  }, [setPlayTab]);
+
+  // Keyboard: one key per verb, ignored while typing or while a dialog is up.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      const s = useGame.getState().state;
+      if (!s || s.ended) return;
+      const k = e.key.toLowerCase();
+      if (/^[1-6]$/.test(k)) {
+        const agent = AGENTS[Number(k) - 1];
+        if (isAgentUnlocked(agent.id, s.hour)) selectAgent(agent.id);
+      } else if (k === "s") doAssign();
+      else if (k === "c") doCross();
+      else if (k === "n") requestAdvance();
+      else if (k === "b") openBrief();
+      else if (k === "?") setHelp(true);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [doAssign, doCross, openBrief, requestAdvance, selectAgent]);
 
   if (!state) return null;
 
@@ -60,123 +117,137 @@ export function PlayShell() {
   const site = SITES.find((s) => s.id === state.selectedSite)!;
   const agent = AGENTS.find((a) => a.id === state.selectedAgent);
   const nextClock = state.hour >= 6 ? null : HOURS[state.hour].clock;
-  const assignReason = assignBlock(state, state.selectedAgent, site.id);
-  const assignOk = assignReason === null;
+  const scanOk = assignBlock(state, state.selectedAgent, site.id) === null;
   const unlocked = AGENTS.find((a) => a.unlockHour === hour.id);
   const progress = briefProgress(state.brief);
+  const guide = nextStep(state);
 
-  const requestAdvance = () => {
-    if (state.hour >= 6) {
-      setScreen("debrief");
-      return;
-    }
-    if (state.ap > 0) setConfirm("advance");
-    else doAdvance();
+  const runGuide = (g: Guide) => {
+    const a = g.action;
+    if (!a) return;
+    if (a.kind === "scan") doAssign();
+    else if (a.kind === "advance") requestAdvance();
+    else if (a.kind === "file") setScreen("debrief");
+    else if (a.kind === "site") selectSite(a.siteId);
+    else if (a.kind === "agent") selectAgent(a.agentId);
   };
 
-  const spent = agent && state.ap > 0 ? agentSpent(state, agent.id) : false;
-  const hint = spent
-    ? `${agent?.name} is spent at this order — pick another scanner`
-    : !assignOk && assignReason
-      ? assignReason
-      : state.ap === 0
-        ? "No attention left — advance the hour"
-        : state.findings.length === 0
-          ? `Scan ${site.short} with ${agent?.name ?? "a scanner"}`
-          : `${site.short}${agent ? ` · ${agent.name}, order ${agent.order}` : ""}`;
-
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-6xl flex-col overflow-x-hidden">
-      <header className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <div className="min-w-0">
-          <p className="font-mono text-xs tabular-nums tracking-widest text-muted uppercase">
-            {hour.clock}
-          </p>
-          <h1 className="truncate font-display text-xl tracking-tight text-fg sm:text-2xl">
-            {hour.name}
-          </h1>
+    <div className="flex min-h-dvh w-full flex-col overflow-x-clip">
+      <header className="sticky top-0 z-30 border-b border-border/60 bg-bg/70 backdrop-blur-md">
+        <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-3 px-4 pt-3 pb-2 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <OrderMark order={hour.order} size={36} className="hidden sm:block" />
+            <div className="min-w-0">
+              <p className="eyebrow tabular-nums">
+                {hour.clock} · Hour {hour.id} of 6
+              </p>
+              <h1 className="truncate font-display text-xl leading-tight tracking-tight text-fg sm:text-2xl">
+                {hour.name}
+              </h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <Attention ap={state.ap} />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="hidden lg:inline-flex"
+              onClick={() => setHelp(true)}
+              aria-label="Keyboard shortcuts"
+            >
+              <Keyboard />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setScreen("codex")} aria-label="Codex">
+              <BookOpen />
+              <span className="hidden sm:inline">Codex</span>
+            </Button>
+            <AdvanceButton
+              hour={state.hour}
+              ap={state.ap}
+              nextClock={nextClock}
+              onClick={requestAdvance}
+              className="hidden lg:inline-flex"
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-2 sm:gap-3">
-          <Attention ap={state.ap} />
-          <AdvanceButton
-            hour={state.hour}
-            ap={state.ap}
-            nextClock={nextClock}
-            onClick={requestAdvance}
-            size="sm"
-            className="hidden lg:inline-flex"
-          />
-          <Button variant="ghost" size="sm" onClick={() => setScreen("codex")}>
-            <BookOpen className="size-4" />
-            <span className="hidden sm:inline">Codex</span>
-          </Button>
-        </div>
+        <DayTrack current={state.hour} />
       </header>
 
-      <HourTrack current={state.hour} />
-
-      <div role="status" aria-live="polite" className="empty:hidden">
-        {state.flash ? (
-          <p className="mx-4 mt-2 rounded-lg bg-raised px-3 py-2 text-sm text-fg sm:mx-6">
-            {state.flash}
-          </p>
-        ) : null}
+      <div className="mx-auto hidden w-full max-w-7xl px-6 pt-4 lg:block">
+        <GuideBar guide={guide} onRun={runGuide} />
       </div>
 
-      <div className="mt-3 hidden flex-1 grid-cols-12 gap-6 px-6 pb-8 lg:grid">
-        <aside className="col-span-3">
+      <div className="mx-auto mt-4 hidden w-full max-w-7xl flex-1 grid-cols-12 gap-5 px-6 pb-10 lg:grid">
+        <aside className="col-span-3" aria-label="Scanners">
           <AgentList />
         </aside>
-        <section className="col-span-5 flex flex-col gap-4">
-          <div className="rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
+        <section className="col-span-5 flex flex-col gap-5" aria-label="Surface and brief">
+          <div className="panel p-4">
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <p className="eyebrow">Incident surface</p>
+              <p className="text-xs text-subtle">
+                {agent ? `Lit for ${agent.name}` : "Pick a scanner"}
+              </p>
+            </div>
             <SiteMap />
+            <div className="mt-2 border-t border-border pt-3">
+              <MapLegend />
+            </div>
           </div>
           <BriefPanel onOpen={setBriefFocus} />
         </section>
-        <aside className="col-span-4 flex flex-col gap-4">
+        <aside className="col-span-4 flex flex-col gap-5" aria-label="Site and case file">
           <SiteDetail onSeal={() => setConfirm("quarantine")} />
           <CaseStrip />
         </aside>
       </div>
 
-      <div className="flex flex-1 flex-col px-4 pb-40 lg:hidden">
+      <main className="flex flex-1 flex-col px-4 pb-48 lg:hidden">
         {playTab === "map" ? (
-          <div className="mt-3 rounded-2xl bg-surface p-3 shadow-[var(--shadow-border)]">
+          <div className="panel mt-4 p-3">
             <SiteMap />
+            <div className="mt-1 border-t border-border px-1 pt-3 pb-1">
+              <MapLegend />
+            </div>
           </div>
         ) : null}
         {playTab === "agents" ? (
-          <div className="mt-3">
+          <div className="mt-4">
             <AgentList />
           </div>
         ) : null}
         {playTab === "brief" ? (
-          <div className="mt-3 rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
-            <div className="mb-6 flex items-baseline justify-between gap-3">
+          <div className="panel mt-4 p-5">
+            <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-display text-3xl tracking-tight text-fg">The brief</h2>
-              <p className="text-sm tabular-nums text-muted">{progress.ready} of 4 ready</p>
+              <BriefMeter ready={progress.ready} answered={progress.answered} />
             </div>
             <BriefEditor />
           </div>
         ) : null}
         {playTab === "file" ? (
-          <div className="mt-3">
+          <div className="mt-4">
             <CaseStrip expanded />
           </div>
         ) : null}
         {playTab === "map" || playTab === "agents" ? (
           <div className="mt-4">
-            <SiteDetail compact={playTab === "map"} onSeal={() => setConfirm("quarantine")} />
+            <SiteDetail compact onSeal={() => setConfirm("quarantine")} />
           </div>
         ) : null}
-      </div>
+      </main>
 
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm lg:hidden">
-        <div className="flex flex-col gap-2 px-4 py-3">
-          <p className="truncate text-xs text-subtle">{hint}</p>
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-bg/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
+        <div className="flex flex-col gap-2.5 px-4 pt-3 pb-2">
+          <GuideBar guide={guide} onRun={runGuide} compact />
           <div className="flex w-full items-center gap-2">
-            <Button className="min-w-0 flex-1" disabled={!assignOk} onClick={doAssign}>
-              Scan with {agent?.name ?? "scanner"}
+            <Button className="min-w-0 flex-1" disabled={!scanOk} onClick={doAssign}>
+              <Radar />
+              <span className="truncate">
+                Scan {site.short}
+                {agent ? ` · ${agent.name}` : ""}
+              </span>
             </Button>
             <AdvanceButton
               hour={state.hour}
@@ -190,23 +261,30 @@ export function PlayShell() {
           {TABS.map((tab) => {
             const Icon = tab.icon;
             const on = playTab === tab.id;
-            const count = tab.id === "brief" ? `${progress.ready}/4` : null;
+            const count =
+              tab.id === "brief"
+                ? `${progress.ready}/4`
+                : tab.id === "file"
+                  ? `${state.findings.length + state.crossNotes.length}`
+                  : null;
             return (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setPlayTab(tab.id)}
                 aria-current={on ? "page" : undefined}
-                aria-label={count ? `${tab.label}, ${progress.ready} of 4 ready` : undefined}
                 className={cn(
-                  "flex h-14 flex-col items-center justify-center gap-0.5 text-xs font-medium",
-                  on ? "text-fg" : "text-muted",
+                  "relative flex h-14 flex-col items-center justify-center gap-0.5 text-xs font-medium transition-colors",
+                  on ? "text-fg" : "text-subtle",
                 )}
               >
+                {on ? (
+                  <span aria-hidden className="absolute top-0 h-0.5 w-8 rounded-full bg-accent" />
+                ) : null}
                 <Icon className="size-4" />
                 <span>
                   {tab.label}
-                  {count ? <span className="ml-1 tabular-nums text-muted">{count}</span> : null}
+                  {count ? <span className="ml-1 tabular-nums text-subtle">{count}</span> : null}
                 </span>
               </button>
             );
@@ -214,82 +292,205 @@ export function PlayShell() {
         </nav>
       </div>
 
-      {state.introOpen ? (
-        <div className="fixed inset-0 z-30 grid place-items-end bg-bg/80 p-4 sm:place-items-center">
-          <div className="w-full max-w-lg rounded-2xl bg-surface p-6 shadow-[var(--shadow-border-hover)]">
-            <p className="font-mono text-xs tracking-widest text-muted uppercase">
-              Hour {hour.id} · {hour.clock} · Order {hour.order}
-            </p>
-            <h2 className="mt-2 font-display text-3xl tracking-tight text-fg">{hour.name}</h2>
-            <p className="mt-3 text-sm leading-relaxed text-muted">{hour.event}</p>
-            <p className="mt-2 text-sm text-fg">{hour.prompt}</p>
-            {unlocked ? (
-              <p className="mt-4 text-xs text-muted">
-                Unlocked: {unlocked.name} — {unlocked.role}
-                {unlocked.family === "sol" ? " · same family as the subjects" : " · independent"}
+      <Toast message={state.flash} />
+
+      <Modal
+        open={state.introOpen}
+        onOpenChange={(o) => (!o ? doDismissIntro() : undefined)}
+        className="sm:max-w-lg"
+        eyebrow={
+          <div className="flex items-center gap-4">
+            <OrderMark order={hour.order} size={56} animate key={hour.id} />
+            <div>
+              <p className="font-display text-4xl leading-none tabular-nums text-fg">
+                {hour.clock}
               </p>
-            ) : null}
-            <p className="mt-2 text-xs text-muted">
-              Two attention. Bright sites have something for this scanner. Dim sites refuse. Cite
-              what you find to the brief.
-            </p>
-            <div className="mt-6 flex justify-end">
-              <Button onClick={doDismissIntro}>Open the surface</Button>
+              <p className="eyebrow mt-1.5">
+                Hour {hour.id} of 6 · Order {hour.order}
+              </p>
             </div>
           </div>
+        }
+        title={hour.name}
+      >
+        <p className="mt-3 text-sm leading-relaxed text-muted">{hour.event}</p>
+        <p className="mt-4 border-l-2 border-accent/60 pl-3 font-display text-lg leading-snug text-fg italic">
+          {hour.prompt}
+        </p>
+        {unlocked ? (
+          <div className="mt-5 flex items-start gap-3 rounded-2xl bg-raised p-4 shadow-[var(--shadow-border)]">
+            <OrderMark order={unlocked.order} size={32} />
+            <div className="min-w-0">
+              <p className="flex flex-wrap items-center gap-2 text-sm text-fg">
+                <span className="eyebrow">Unlocked</span>
+                <span className="font-medium">{unlocked.name}</span>
+                <Badge tone={unlocked.family === "sol" ? "warn" : "ok"}>
+                  {unlocked.family === "sol" ? "same-family" : "independent"}
+                </Badge>
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted">{unlocked.blurb}</p>
+            </div>
+          </div>
+        ) : null}
+        <ul className="mt-5 grid grid-cols-1 gap-2 text-xs text-muted sm:grid-cols-3">
+          <li className="rounded-xl bg-bg/50 px-3 py-2">
+            <span className="block text-fg">2 attention</span>
+            Scan or cross-check, 1 each
+          </li>
+          <li className="rounded-xl bg-bg/50 px-3 py-2">
+            <span className="block text-fg">Bright sites</span>
+            have work for your scanner
+          </li>
+          <li className="rounded-xl bg-bg/50 px-3 py-2">
+            <span className="block text-fg">Cite</span>
+            filings to the brief
+          </li>
+        </ul>
+        <div className="mt-6 flex justify-end">
+          <ModalClose asChild>
+            <Button size="lg" className="w-full sm:w-auto">
+              Open the surface
+              <ArrowRight />
+            </Button>
+          </ModalClose>
         </div>
-      ) : null}
+      </Modal>
 
       <BriefDialog focus={briefFocus} onClose={() => setBriefFocus(null)} />
 
-      {confirm ? (
-        <div className="fixed inset-0 z-40 grid place-items-end bg-bg/80 p-4 sm:place-items-center">
-          <div className="w-full max-w-md rounded-2xl bg-surface p-6 shadow-[var(--shadow-border-hover)]">
-            {confirm === "advance" ? (
-              <>
-                <h2 className="font-display text-2xl text-fg">Leave attention unspent?</h2>
-                <p className="mt-2 text-sm leading-relaxed text-muted">
-                  You still have {state.ap} attention. Advancing closes this hour — leftover scans
-                  are lost.
-                </p>
-                <div className="mt-6 flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => setConfirm(null)}>
-                    Stay
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setConfirm(null);
-                      doAdvance();
-                    }}
-                  >
-                    Advance anyway
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 className="font-display text-2xl text-fg">Seal {site.short}?</h2>
-                <p className="mt-2 text-sm leading-relaxed text-muted">
-                  Free, irreversible. Later orders cannot re-read this site — use it if you think
-                  more same-family scans will launder the picture.
-                </p>
-                <div className="mt-6 flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => setConfirm(null)}>
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setConfirm(null);
-                      useGame.getState().doQuarantine();
-                    }}
-                  >
-                    Seal site
-                  </Button>
-                </div>
-              </>
-            )}
-          </div>
+      <Modal
+        open={confirm === "advance"}
+        onOpenChange={(o) => (!o ? setConfirm(null) : undefined)}
+        title="Leave attention unspent?"
+        description={`You still have ${state.ap} attention. Advancing closes this hour — unspent attention is lost.`}
+      >
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <ModalClose asChild>
+            <Button variant="ghost">Stay</Button>
+          </ModalClose>
+          <Button
+            onClick={() => {
+              setConfirm(null);
+              doAdvance();
+            }}
+          >
+            Advance to {nextClock}
+          </Button>
         </div>
+      </Modal>
+
+      <Modal
+        open={confirm === "quarantine"}
+        onOpenChange={(o) => (!o ? setConfirm(null) : undefined)}
+        title={`Seal ${site.short}?`}
+        description="Free and irreversible. No scanner can read this site again — use it if you think a same-family re-read would launder the picture."
+      >
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <ModalClose asChild>
+            <Button variant="ghost">Cancel</Button>
+          </ModalClose>
+          <Button
+            onClick={() => {
+              setConfirm(null);
+              useGame.getState().doQuarantine();
+            }}
+          >
+            <Lock />
+            Seal site
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal open={help} onOpenChange={setHelp} title="Keyboard shortcuts">
+        <dl className="mt-5 flex flex-col divide-y divide-border">
+          {SHORTCUTS.map(([k, v]) => (
+            <div key={k} className="flex items-center justify-between gap-4 py-2.5 text-sm">
+              <dt className="text-muted">{v}</dt>
+              <dd>
+                <kbd className="rounded-md bg-raised px-2 py-1 text-xs text-fg shadow-[var(--shadow-border-hover)]">
+                  {k}
+                </kbd>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </Modal>
+    </div>
+  );
+}
+
+function GuideBar({
+  guide,
+  onRun,
+  compact = false,
+  className,
+}: {
+  guide: Guide;
+  onRun: (g: Guide) => void;
+  compact?: boolean;
+  className?: string;
+}) {
+  const a = guide.action;
+  const showAction =
+    a && (a.kind === "site" || a.kind === "agent" || (!compact && a.kind !== "advance"));
+  const label =
+    a?.kind === "site" || a?.kind === "agent"
+      ? a.label
+      : a?.kind === "scan"
+        ? "Scan"
+        : a?.kind === "file"
+          ? "File the brief"
+          : null;
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "flex items-center gap-3",
+        !compact && "rounded-2xl bg-surface/80 px-4 py-2.5 shadow-[var(--shadow-border)]",
+        className,
+      )}
+    >
+      <Compass aria-hidden className="size-4 shrink-0 text-accent" />
+      <p
+        className={cn(
+          "min-w-0 flex-1 text-sm text-fg",
+          compact && "line-clamp-2 text-xs leading-snug text-muted",
+        )}
+      >
+        {guide.text}
+      </p>
+      {showAction && label ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          className={cn(compact && "h-8")}
+          onClick={() => onRun(guide)}
+        >
+          {label}
+          <ArrowRight />
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function Toast({ message }: { message: string | null }) {
+  return (
+    <div
+      aria-live="polite"
+      className="pointer-events-none fixed inset-x-0 bottom-52 z-40 flex justify-center px-4 lg:bottom-8"
+    >
+      {message ? (
+        <p
+          key={message}
+          className="flex max-w-md animate-in items-center gap-2.5 rounded-full bg-overlay py-2.5 pr-5 pl-3 text-sm text-fg shadow-[var(--shadow-float)] duration-300 fade-in-0 slide-in-from-bottom-3"
+        >
+          <span className="grid size-6 place-items-center rounded-full bg-accent text-accent-fg">
+            <Radar className="size-3.5" aria-hidden />
+          </span>
+          <span className="line-clamp-2">{message}</span>
+        </p>
       ) : null}
     </div>
   );
@@ -301,45 +502,47 @@ function AdvanceButton({
   nextClock,
   onClick,
   className,
-  size = "default",
 }: {
   hour: number;
   ap: number;
   nextClock: string | null;
   onClick: () => void;
   className?: string;
-  size?: "sm" | "default";
 }) {
   if (hour >= 6) {
     return (
-      <Button variant="secondary" size={size} className={className} onClick={onClick}>
+      <Button variant={ap === 0 ? "default" : "secondary"} className={className} onClick={onClick}>
+        <ScrollText />
         File the brief
       </Button>
     );
   }
   return (
-    <Button
-      variant={ap === 0 ? "default" : "secondary"}
-      size={size}
-      className={className}
-      onClick={onClick}
-    >
-      {nextClock ? `Next hour ${nextClock}` : "Next hour"}
+    <Button variant={ap === 0 ? "default" : "secondary"} className={className} onClick={onClick}>
+      <span className="tabular-nums">{nextClock}</span>
+      <ArrowRight />
     </Button>
   );
 }
 
 function Attention({ ap }: { ap: number }) {
   return (
-    <div className="flex items-center gap-2" aria-label={`${ap} of 2 attention`}>
-      <span className="font-mono text-xs tracking-widest text-muted uppercase">Attention</span>
-      <span className="flex gap-1">
+    <div
+      className="flex h-9 items-center gap-2 rounded-full bg-surface/80 px-3 shadow-[var(--shadow-border)]"
+      role="img"
+      aria-label={`${ap} of 2 attention left`}
+      title="Attention: each scan or cross-check costs 1"
+    >
+      <span className="eyebrow hidden sm:inline">Attention</span>
+      <span className="flex gap-1.5">
         {[0, 1].map((i) => (
           <span
             key={i}
             className={cn(
-              "size-2.5 rounded-full",
-              i < ap ? "bg-accent" : "bg-raised shadow-[var(--shadow-border)]",
+              "size-2.5 rounded-full transition-[background-color,box-shadow,transform] duration-300",
+              i < ap
+                ? "bg-accent shadow-[0_0_10px_0_var(--color-accent)]"
+                : "scale-90 bg-transparent shadow-[inset_0_0_0_1px_var(--color-subtle)]",
             )}
           />
         ))}
@@ -348,21 +551,33 @@ function Attention({ ap }: { ap: number }) {
   );
 }
 
-function HourTrack({ current }: { current: number }) {
+function DayTrack({ current }: { current: number }) {
   return (
-    <ol className="mx-4 flex gap-1 sm:mx-6">
+    <ol
+      className="mx-auto flex w-full max-w-7xl gap-1 px-4 pb-2.5 sm:px-6"
+      aria-label={`Hour ${current} of 6`}
+    >
       {HOURS.map((h) => {
         const done = h.id < current;
         const on = h.id === current;
         return (
-          <li
-            key={h.id}
-            className={cn(
-              "h-1 flex-1 rounded-full",
-              on ? "bg-accent" : done ? "bg-muted" : "bg-raised",
-            )}
-            title={`${h.clock} ${h.name}`}
-          />
+          <li key={h.id} className="flex-1" aria-current={on ? "step" : undefined}>
+            <span
+              className={cn(
+                "block h-1 rounded-full transition-colors duration-500",
+                on ? "bg-accent" : done ? "bg-muted/50" : "bg-border",
+              )}
+            />
+            <span
+              className={cn(
+                "mt-1 hidden font-mono text-[0.6875rem] tabular-nums sm:block",
+                on ? "text-fg" : done ? "text-subtle" : "text-subtle/60",
+              )}
+            >
+              {h.clock}
+              <span className="ml-1.5 hidden xl:inline">{h.name}</span>
+            </span>
+          </li>
         );
       })}
     </ol>
@@ -374,24 +589,29 @@ function AgentList() {
   const selectAgent = useGame((s) => s.selectAgent);
 
   return (
-    <div className="flex max-h-[70vh] flex-col gap-2 overflow-y-auto">
-      <p className="font-mono text-xs tracking-widest text-muted uppercase">Scanners</p>
-      {AGENTS.map((agent) => {
+    <div className="flex flex-col gap-2">
+      <p className="eyebrow mb-1 hidden lg:block">Scanners</p>
+      {AGENTS.map((agent, i) => {
         const unlocked = isAgentUnlocked(agent.id, state.hour);
         const selected = state.selectedAgent === agent.id;
+        const lit = unlocked ? liveSites(state, agent.id as AgentId).length : 0;
         return (
           <button
             key={agent.id}
             type="button"
             disabled={!unlocked}
+            aria-pressed={selected}
             onClick={() => selectAgent(agent.id)}
             className={cn(
-              "flex items-start gap-3 rounded-xl p-3 text-left shadow-[var(--shadow-border)]",
-              selected ? "bg-raised" : "bg-surface",
-              !unlocked && "opacity-40",
+              "group relative flex items-start gap-3 rounded-2xl p-3.5 text-left transition-[background-color,box-shadow] duration-150",
+              selected
+                ? "bg-raised shadow-[0_0_0_1px_var(--color-accent)]"
+                : "bg-surface/80 shadow-[var(--shadow-border)] hover:bg-raised hover:shadow-[var(--shadow-border-hover)]",
+              !unlocked &&
+                "bg-transparent opacity-50 shadow-[var(--shadow-border)] hover:bg-transparent",
             )}
           >
-            <OrderMark order={agent.order} size={28} />
+            <OrderMark order={agent.order} size={34} className={cn(!unlocked && "text-subtle")} />
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-fg">{agent.name}</span>
@@ -400,16 +620,40 @@ function AgentList() {
                 </Badge>
               </span>
               <span className="mt-0.5 block text-xs text-muted">
-                {unlocked
-                  ? `Order ${agent.order} · ${agent.role}`
-                  : `Unlocks hour ${agent.unlockHour}`}
+                {unlocked ? (
+                  `Order ${agent.order} · ${agent.role}`
+                ) : (
+                  <span className="inline-flex items-center gap-1">
+                    <Lock className="size-3" aria-hidden />
+                    Unlocks at {HOURS[agent.unlockHour - 1].clock}
+                  </span>
+                )}
               </span>
+              {unlocked && state.ap > 0 ? (
+                <span
+                  className={cn(
+                    "mt-1.5 inline-flex items-center gap-1.5 text-xs",
+                    lit ? "text-fg" : "text-subtle",
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className={cn("size-1.5 rounded-full", lit ? "bg-accent" : "bg-subtle/50")}
+                  />
+                  {lit ? `${lit} ${lit === 1 ? "site" : "sites"} lit` : "Spent this hour"}
+                </span>
+              ) : null}
               {selected && unlocked ? (
-                <span className="mt-1 block text-xs leading-relaxed text-subtle">
+                <span className="mt-2 block animate-rise text-xs leading-relaxed text-subtle">
                   {agent.blurb}
                 </span>
               ) : null}
             </span>
+            {unlocked ? (
+              <kbd className="hidden rounded-md px-1.5 py-0.5 text-[0.6875rem] text-subtle shadow-[var(--shadow-border)] lg:block">
+                {i + 1}
+              </kbd>
+            ) : null}
           </button>
         );
       })}
@@ -424,81 +668,89 @@ function SiteDetail({ compact = false, onSeal }: { compact?: boolean; onSeal: ()
   const site = SITES.find((s) => s.id === state.selectedSite)!;
   const agent = AGENTS.find((a) => a.id === state.selectedAgent);
   const sealed = state.quarantined.includes(site.id);
-  const latest = [...state.findings]
-    .filter((f) => f.siteId === site.id)
-    .slice(-2)
-    .reverse();
+  const onSite = state.findings.filter((f) => f.siteId === site.id);
+  const latest = [...onSite].slice(-2).reverse();
   const scanWhy = assignBlock(state, state.selectedAgent, site.id);
   const crossWhy = crossBlock(state, site.id);
   const sealWhy = quarantineBlock(state, site.id);
+  const captured = state.world.familyCapture[site.id];
 
   return (
-    <div className="rounded-2xl bg-surface p-4 shadow-[var(--shadow-border)]">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="font-mono text-xs tracking-widest text-muted uppercase">Selected site</p>
-          <h2 className="font-display text-2xl tracking-tight text-fg">{site.name}</h2>
+    <section aria-labelledby="site-title" className="panel p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="eyebrow">Selected site</p>
+          <h2 id="site-title" className="mt-0.5 font-display text-2xl tracking-tight text-fg">
+            {site.name}
+          </h2>
         </div>
-        {sealed ? <Lock className="size-4 text-muted" /> : null}
+        <div className="flex shrink-0 flex-wrap justify-end gap-1.5 pt-1">
+          {sealed ? (
+            <Badge>
+              <Lock className="mr-1 size-3" aria-hidden />
+              sealed
+            </Badge>
+          ) : null}
+          {captured ? <Badge tone="warn">captured</Badge> : null}
+          <Badge>
+            {onSite.length} {onSite.length === 1 ? "filing" : "filings"}
+          </Badge>
+        </div>
       </div>
       <p className="mt-2 text-sm leading-relaxed text-muted">{site.blurb}</p>
-      {state.world.familyCapture[site.id] ? (
-        <p className="mt-2 text-xs text-warn">
+      {captured ? (
+        <p className="mt-3 flex gap-2 rounded-xl bg-warn/10 px-3 py-2 text-xs leading-relaxed text-warn">
+          <span aria-hidden className="mt-1 size-2 shrink-0 rounded-full bg-warn" />
           Family capture: same-family scanners will file a milder picture here.
         </p>
       ) : null}
 
-      {compact ? (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <Button variant="secondary" disabled={!canCross(state, site.id)} onClick={doCross}>
-            <GitCompare className="size-4" />
+      <div className="mt-4 flex flex-col gap-2">
+        {!compact ? (
+          <>
+            <Button size="lg" disabled={scanWhy !== null} onClick={doAssign}>
+              <Radar />
+              {agent ? `Scan with ${agent.name}` : "Select a scanner"}
+              <kbd className="ml-auto hidden rounded bg-accent-fg/10 px-1.5 text-xs xl:inline">
+                S
+              </kbd>
+            </Button>
+            {scanWhy ? <Reason>{scanWhy}</Reason> : null}
+          </>
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <Button variant="secondary" disabled={crossWhy !== null} onClick={doCross}>
+            <GitCompare />
             Cross-check
           </Button>
           <Button variant="outline" disabled={sealWhy !== null} onClick={onSeal}>
-            <Lock className="size-4" />
+            <Lock />
             Seal
           </Button>
         </div>
-      ) : (
-        <div className="mt-4 flex flex-col gap-2">
-          <Button disabled={scanWhy !== null} onClick={doAssign}>
-            <Shield className="size-4" />
-            {agent ? `Scan with ${agent.name}` : "Select a scanner"}
-          </Button>
-          {scanWhy ? <p className="text-xs text-subtle">{scanWhy}</p> : null}
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="secondary" disabled={!canCross(state, site.id)} onClick={doCross}>
-              <GitCompare className="size-4" />
-              Cross-check
-            </Button>
-            <Button variant="outline" disabled={sealWhy !== null} onClick={onSeal}>
-              <Lock className="size-4" />
-              Seal site
-            </Button>
-          </div>
-          {crossWhy && sealWhy ? (
-            <p className="text-xs text-subtle">{crossWhy}</p>
-          ) : !canCross(state, site.id) ? (
-            <p className="text-xs text-subtle">{crossWhy}</p>
-          ) : null}
-        </div>
-      )}
-
-      {compact && latest.length < 2 && state.ap > 0 ? (
-        <p className="mt-2 text-xs text-subtle">Two filings on this site unlock a cross-check.</p>
-      ) : null}
+        {crossWhy && !(compact && state.ap === 0) ? (
+          <Reason>Cross-check: {crossWhy.toLowerCase()}</Reason>
+        ) : null}
+      </div>
 
       {latest.length ? (
-        <ul className="mt-4 flex flex-col gap-3">
-          {latest.map((f, i) => (
-            <FindingCard key={f.id} finding={f} open={i === 0} />
-          ))}
-        </ul>
+        <div className="mt-5">
+          <p className="eyebrow mb-2">Latest here</p>
+          <ul className="flex flex-col gap-3">
+            {latest.map((f, i) => (
+              <FindingCard key={f.id} finding={f} open={i === 0} />
+            ))}
+          </ul>
+        </div>
       ) : (
-        <p className="mt-4 text-xs text-subtle">
+        <p className="mt-5 rounded-xl border border-dashed border-border px-3.5 py-3 text-xs text-subtle">
           No filings here yet. Scan to put evidence in the file.
         </p>
       )}
-    </div>
+    </section>
   );
+}
+
+function Reason({ children }: { children: ReactNode }) {
+  return <p className="px-1 text-xs leading-relaxed text-subtle">{children}</p>;
 }

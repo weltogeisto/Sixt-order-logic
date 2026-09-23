@@ -21,15 +21,21 @@ npm run typecheck
 Game-logic contract tests (Vite 8 ships rolldown, so bundle with esbuild first):
 
 ```bash
-npx --yes esbuild@0.25 src/game/engine.test.ts --bundle --platform=node \
-  --format=esm --outfile=/tmp/engine.test.mjs && node --test /tmp/engine.test.mjs
+for t in engine guide; do
+  npx --yes esbuild@0.25 src/game/$t.test.ts --bundle --platform=node \
+    --format=esm --outfile=/tmp/$t.test.mjs && node --test /tmp/$t.test.mjs
+done
 ```
+
+## Playing
+
+The guide line under the header always names the next useful move. Keyboard: `1`–`6` pick a scanner, `S` scans, `C` cross-checks, `B` opens the brief, `N` moves to the next hour, `?` lists the shortcuts.
 
 ## Where things are
 
 `HANDOVER.md` is the design contract: the non-negotiable rules, the hour-by-hour loop, the scoring gradient (48 / 72 / 100) and the architecture. Read it before changing game logic.
 
-- `src/game/`: data, clauses, engine, scoring, save
+- `src/game/`: data, clauses, engine, scoring, save, the guide
 - `src/components/game/`: the play shell, the brief, the case file, the debrief
 
 Built with TanStack Start, React 19, Tailwind v4 and Zustand. It was created in Grok App Builder and deploys to Vercel. Auth and database are off; progress is saved in `localStorage`.

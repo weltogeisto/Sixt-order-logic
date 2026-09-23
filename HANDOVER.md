@@ -2,7 +2,9 @@
 
 Teaching strategy game. Player is an independent investigator reconstructing METR / Redwood’s 26 August 2026 public brief of the OpenAI / Hugging Face incident, through first-to-sixth-order logic. Not their report and not a documentary.
 
-**Status (22 Sep 2026):** playable end-to-end. Auth off, database off, save in `localStorage` (save v4). The brief sits on the desk from 06:00: players cite filings to the four questions as footnotes, draft answers any time, and the score reads the citations. Latest pass closes the scanner bypass — the fifth–sixth question can only be carried by a cross-checked same-family read — and corrects two copy lines against the public record.
+**Status (23 Sep 2026):** playable end-to-end, with a full visual and usability pass: a guide line that always names the next move, keyboard shortcuts, a measured map, accessible dialogs, self-hosted fonts and an hour-driven sky. Game logic is unchanged.
+
+**Previous status (22 Sep 2026):** playable end-to-end. Auth off, database off, save in `localStorage` (save v4). The brief sits on the desk from 06:00: players cite filings to the four questions as footnotes, draft answers any time, and the score reads the citations. Latest pass closes the scanner bypass — the fifth–sixth question can only be carried by a cross-checked same-family read — and corrects two copy lines against the public record.
 
 ---
 
@@ -78,7 +80,7 @@ Evidence keys live in `EVIDENCE_KEYS` (engine.ts). A citation *holds* if the cit
 
 A same-family filing that carries a key but was never cross-checked does not hold (results: *Unchecked · −3*). Wrong answers keep their old partials (unknown / overclaim), minus any padding. Ranks: ≥90 brief worthy of the file · ≥70 partial · ≥45 nested structure missed · else took the record at face value. The results screen lists each question’s footnotes with *Holds* or *No claim · −3*.
 
-Verified 22 Sep 2026 (`engine.test.ts`, 20 tests):
+Verified 22 Sep 2026 (`engine.test.ts`, 20 tests; re-run 23 Sep with `guide.test.ts`, 4 tests):
 
 - **100 path (all 12 attention):** H1 Census Board + Cluster · H2 Intent Gym + Board · H3 Commons Vault + Gym · H4 Commons Perimeter + Intent Cluster · H5 Census Runtime + Intent Runtime · H6 Nest Cluster + cross-check Cluster · cite Intent/Gym → Motive, Census/Runtime → Record, Intent/Runtime → 4th order, Nest/Cluster or the discrepancy note → 5th–6th · file the four calibrated answers.
 - **Independent-only path:** same hours 1–5, hour 6 on Commons + an independent cross-check. The fifth–sixth question cannot be cited; the run lands below 90.
@@ -100,26 +102,32 @@ src/game/
   findings.ts       CLAUSES, nativeClauses, hasNewWork, darkReason, composeFinding, composeCross
   engine.ts         worldForHour, AP/FSM, scoreBrief
   engine.test.ts    design-contract tests (tsc-checked; node --test cannot import extensionless)
+  guide.ts          nextStep (the one-line guide) + liveSites; pure, reads only what the chrome shows
+  guide.test.ts     guide contract: never nudges toward a same-family scanner
   save.ts           localStorage key sixth-hour-v1, SAVE_VERSION 4, migrateState + migrateBrief (drops dangling cites)
   store.ts          zustand + persist on mutation / pagehide / hidden; doCite / doDraft / doFile
 src/components/game/
   App.tsx           hydrate after mount (avoid SSR localStorage mismatch)
   TitleScreen.tsx   Resume primary if in-progress; New investigation confirms replace
   Briefing.tsx      HOW_TO, skip
-  PlayShell.tsx     hour intro, desktop 3-col (map + brief centre), mobile tabs Surface/Scanners/Brief/File
+  PlayShell.tsx     sticky header + DayTrack, GuideBar, keyboard shortcuts, toast, hour card, desktop 3-col, mobile tabs
   Brief.tsx         BriefPanel (desk clauses), BriefEditor (answers + footnotes), BriefDialog (Radix side sheet)
   CaseFile.tsx      FindingCard / CrossCard with CiteBar, CaseStrip
   Footnote.tsx      serif superscript mark shared by brief, cards and results
-  SiteMap.tsx       live/dark nodes; h-56 mobile, lg:aspect-square desktop
+  SiteMap.tsx       measured pixel space (ResizeObserver) so lines meet nodes at any width; six order rings; MapLegend
   Debrief.tsx       filing = BriefEditor + citable case file; results = score, footnote verdicts, lessons
   CodexView.tsx     Back uses returnTo (title stays title)
-  OrderMark.tsx     concentric rings
-src/styles.css      tokens (ink #0e0f0c, paper #ecebe4, sage accent #dfe4d4)
+  OrderMark.tsx     concentric rings; `animate` draws them in
+src/components/ui/
+  dialog.tsx        Modal: Radix dialog (focus trap, Escape), bottom sheet on phones
+src/styles.css      tokens (ink #0e0f0c, paper #ecebe4, sage accent #dfe4d4), `data-hour` sky, grain, keyframes
 src/lib/og/site.json  title "Sixth Hour", type "x:game", card "custom"
 public/             og.jpg, x-banner.jpg, favicon.svg
 ```
 
-UI tokens only — no ad-hoc hex in components. `--color-subtle` is `#85857c` (≥4.5:1 on bg, surface and raised); don’t darken it — it carries the “why is this disabled” hints. Fonts: Newsreader (display), IBM Plex Sans / Mono. Brand: editorial dark, not purple.
+UI tokens only — no ad-hoc hex in components. `--color-subtle` is `#85857c` (≥4.5:1 on bg, surface and raised); don’t darken it — it carries the “why is this disabled” hints. Fonts: Newsreader (display), IBM Plex Sans / Mono — self-hosted via `@fontsource`, no Google Fonts request. Brand: editorial dark, not purple.
+
+**The sky.** `App.tsx` sets `data-hour` on `<html>` during a run; `styles.css` moves a low glow from warm dawn (06:00) to cold night (21:00). Title and Codex sit at night. It is the only colour that changes with the clock.
 
 **Save blob:** `{ version, screen, playTab, briefingStep, state, bestScore }`. `returnTo` is ephemeral (Codex back). Hydrate in `useEffect`; first paint is title then save.
 
@@ -129,9 +137,13 @@ UI tokens only — no ad-hoc hex in components. `--color-subtle` is `#85857c` (�
 
 ## Chrome (do not regress)
 
-- Desktop: Scan lives in the site panel. **Next hour** lives in the header. No sticky duplicate Scan (`lg:hidden` on a `Button` with `inline-flex` loses the fight — use a wrapper or don’t render).
-- Mobile: one `fixed` bottom stack (hint + Scan/Next, then Surface / Scanners / File). Sticky-above-tabs overlaps when the column is short.
-- Map must stay short on small viewports (`h-56`, square only at `lg`). Cluster sits at y ≈ 74 so the label is not under the action bar.
+- Desktop: Scan lives in the site panel. **Next hour** lives in the header. No sticky duplicate Scan.
+- Mobile: one `fixed` bottom stack (guide + Scan/Next, then Surface / Scanners / Brief / File).
+- **The guide line** (`nextStep`) sits under the header on desktop and in the bottom stack on mobile. It may point at a bright site, an independent scanner, the next hour or filing. It must never point at which filing answers which question, and never suggest a same-family scanner (rule 5) — `guide.test.ts` holds that.
+- **Keyboard:** 1–6 scanner, S scan, C cross-check, B brief, N next hour, ? shortcuts. Ignored while typing or while a dialog is open.
+- Map coordinates are percentages of the measured box (`SITES[].x/y`), spread so labels never collide at 390 px: y 13 / 37 / 65 / 86.
+- All modals go through `Modal` (Radix). Don't hand-roll `fixed inset-0` overlays — they lose focus trap and Escape.
+- `animate-rise` animates `transform`; never put it on an element positioned with an inline `transform` (wrap the content instead).
 - Disabled Scan always shows why. Attention is labeled, not two naked dots.
 - Codex from title must return to title (`returnTo`).
 
@@ -159,7 +171,7 @@ The Codex Strategy section no longer states the four calibrated answers; it expl
 ## Known leftovers (not blockers)
 
 - `usedAgentsThisHour` is still on `GameState` and still written; nothing reads it. Safe to delete on the next save-version bump.
-- `engine.test.ts` typechecks. `node --experimental-strip-types --test` cannot resolve extensionless `./data` imports; bundle first (Vite 8 ships rolldown, not esbuild): `npx --yes esbuild@0.25 src/game/engine.test.ts --bundle --platform=node --format=esm --outfile=/tmp/engine.test.mjs && node --test /tmp/engine.test.mjs` — 20 tests.
+- `engine.test.ts` typechecks. `node --experimental-strip-types --test` cannot resolve extensionless `./data` imports; bundle first (Vite 8 ships rolldown, not esbuild): `npx --yes esbuild@0.25 src/game/engine.test.ts --bundle --platform=node --format=esm --outfile=/tmp/engine.test.mjs && node --test /tmp/engine.test.mjs` — 20 tests. Same for `guide.test.ts` — 4 tests.
 - ~~A perfect score was reachable with independent scanners only.~~ Closed 22 Sep 2026 — see rule 12.
 - Seal is niche once the player controls who scans. Keep it free or cut it; do not put AP back on it.
 - No path to title mid-run except finishing the brief (debrief has Title) or a new session. Fine for a short game.

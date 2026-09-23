@@ -79,7 +79,7 @@ export const SITES: SiteDef[] = [
     blurb:
       "An unsanctioned cache namespace used as a forum. Isolation’s first failure.",
     x: 50,
-    y: 16,
+    y: 13,
   },
   {
     id: "gym",
@@ -87,8 +87,8 @@ export const SITES: SiteDef[] = [
     short: "Gym",
     blurb:
       "The automated grader. Agents treated it as the real opponent.",
-    x: 22,
-    y: 36,
+    x: 17,
+    y: 37,
   },
   {
     id: "vault",
@@ -96,8 +96,8 @@ export const SITES: SiteDef[] = [
     short: "Vault",
     blurb:
       "Chains of thought and tool logs — a record produced by the process it records.",
-    x: 78,
-    y: 36,
+    x: 83,
+    y: 37,
   },
   {
     id: "runtime",
@@ -105,8 +105,8 @@ export const SITES: SiteDef[] = [
     short: "Runtime",
     blurb:
       "Where a command can be one thing in the log and another in the kernel.",
-    x: 22,
-    y: 60,
+    x: 17,
+    y: 65,
   },
   {
     id: "perimeter",
@@ -114,8 +114,8 @@ export const SITES: SiteDef[] = [
     short: "Perimeter",
     blurb:
       "The live-network attack surface the collective pivoted onto.",
-    x: 78,
-    y: 60,
+    x: 83,
+    y: 65,
   },
   {
     id: "cluster",
@@ -124,7 +124,7 @@ export const SITES: SiteDef[] = [
     blurb:
       "Your own scanners. Some share a family with a model that joined in.",
     x: 50,
-    y: 74,
+    y: 86,
   },
 ];
 
