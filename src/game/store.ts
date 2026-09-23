@@ -14,8 +14,16 @@ import {
 import { SAVE_VERSION, loadSave, writeSave, type SaveBlob } from "./save";
 import type { AgentId, GameState, PlayTab, QuestionId, Screen, SiteId } from "./types";
 
+const TUTORIAL_KEY = "sixth-hour-tutorial-done";
+
 type GameStore = SaveBlob & {
   ready: boolean;
+  /** Step of the practice hour, or null outside it. The practice run is never persisted. */
+  tutorial: number | null;
+  tutorialDone: boolean;
+  startTutorial: () => void;
+  setTutorialStep: (step: number) => void;
+  endTutorial: (next: "begin" | "title") => void;
   returnTo: Screen;
   hydrate: () => void;
   persist: () => void;
@@ -50,6 +58,8 @@ const empty: SaveBlob = {
 };
 
 function persistNow(get: () => GameStore) {
+  // The practice hour lives in memory only; the real save stays untouched.
+  if (get().tutorial !== null) return;
   const { screen, playTab, briefingStep, state, bestScore } = get();
   writeSave({ version: SAVE_VERSION, screen, playTab, briefingStep, state, bestScore });
 }
@@ -58,9 +68,39 @@ export const useGame = create<GameStore>((set, get) => ({
   ...empty,
   ready: false,
   returnTo: "title",
+  tutorial: null,
+  tutorialDone: false,
   hydrate: () => {
     const loaded = loadSave();
-    set({ ...loaded, ready: true });
+    let tutorialDone = false;
+    try {
+      tutorialDone = localStorage.getItem(TUTORIAL_KEY) === "1";
+    } catch {
+      tutorialDone = false;
+    }
+    set({ ...loaded, ready: true, tutorialDone });
+  },
+  startTutorial: () => {
+    persistNow(get);
+    // Start on a dim site so the first lesson is choosing a bright one.
+    set({
+      tutorial: 0,
+      screen: "play",
+      playTab: "map",
+      state: { ...createInitialState(), introOpen: false, selectedSite: "gym" },
+    });
+  },
+  setTutorialStep: (tutorial) => set({ tutorial }),
+  endTutorial: (next) => {
+    try {
+      localStorage.setItem(TUTORIAL_KEY, "1");
+    } catch {
+      // Private mode: the practice hour just stays on offer.
+    }
+    set({ tutorial: null, tutorialDone: true });
+    get().hydrate();
+    if (next === "begin") get().begin();
+    else get().setScreen("title");
   },
   persist: () => persistNow(get),
   setScreen: (screen) => {

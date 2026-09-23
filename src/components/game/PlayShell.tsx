@@ -29,6 +29,8 @@ import { cn } from "@/lib/utils";
 import type { AgentId, PlayTab, QuestionId } from "@/game/types";
 import { BriefDialog, BriefEditor, BriefMeter, BriefPanel } from "./Brief";
 import { CaseStrip, FindingCard } from "./CaseFile";
+import { Coach } from "./Coach";
+import { useTutorialDriver } from "./useTutorialDriver";
 import { OrderMark } from "./OrderMark";
 import { MapLegend, SiteMap } from "./SiteMap";
 
@@ -63,6 +65,8 @@ export function PlayShell() {
   const [confirm, setConfirm] = useState<"advance" | "quarantine" | null>(null);
   const [briefFocus, setBriefFocus] = useState<QuestionId | null>(null);
   const [help, setHelp] = useState(false);
+  const tutorial = useGame((s) => s.tutorial);
+  useTutorialDriver();
 
   useEffect(() => {
     if (!state?.flash) return;
@@ -141,6 +145,7 @@ export function PlayShell() {
             <div className="min-w-0">
               <p className="eyebrow tabular-nums">
                 {hour.clock} · Hour {hour.id} of 6
+                {tutorial !== null ? <span className="text-accent"> · Practice</span> : null}
               </p>
               <h1 className="truncate font-display text-xl leading-tight tracking-tight text-fg sm:text-2xl">
                 {hour.name}
@@ -174,8 +179,18 @@ export function PlayShell() {
         <DayTrack current={state.hour} />
       </header>
 
-      <div className="mx-auto hidden w-full max-w-7xl px-6 pt-4 lg:block">
-        <GuideBar guide={guide} onRun={runGuide} />
+      <div
+        className={cn(
+          "mx-auto hidden w-full max-w-7xl px-6 pt-4 lg:block",
+          // Practice: keep the coach in view under the header while the page scrolls.
+          tutorial !== null && "sticky top-24 z-20",
+        )}
+      >
+        {tutorial !== null ? (
+          <Coach className="bg-surface/95 backdrop-blur-md" />
+        ) : (
+          <GuideBar guide={guide} onRun={runGuide} />
+        )}
       </div>
 
       <div className="mx-auto mt-4 hidden w-full max-w-7xl flex-1 grid-cols-12 gap-5 px-6 pb-10 lg:grid">
@@ -203,7 +218,9 @@ export function PlayShell() {
         </aside>
       </div>
 
-      <main className="flex flex-1 flex-col px-4 pb-48 lg:hidden">
+      <main
+        className={cn("flex flex-1 flex-col px-4 pb-48 lg:hidden", tutorial !== null && "pb-80")}
+      >
         {playTab === "map" ? (
           <div className="panel mt-4 p-3">
             <SiteMap />
@@ -240,9 +257,18 @@ export function PlayShell() {
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-bg/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-md lg:hidden">
         <div className="flex flex-col gap-2.5 px-4 pt-3 pb-2">
-          <GuideBar guide={guide} onRun={runGuide} compact />
+          {tutorial !== null ? (
+            <Coach compact />
+          ) : (
+            <GuideBar guide={guide} onRun={runGuide} compact />
+          )}
           <div className="flex w-full items-center gap-2">
-            <Button className="min-w-0 flex-1" disabled={!scanOk} onClick={doAssign}>
+            <Button
+              className="min-w-0 flex-1"
+              disabled={!scanOk}
+              onClick={doAssign}
+              data-tour="scan"
+            >
               <Radar />
               <span className="truncate">
                 Scan {site.short}
@@ -271,6 +297,7 @@ export function PlayShell() {
               <button
                 key={tab.id}
                 type="button"
+                data-tour={tab.id === "brief" ? "brief" : undefined}
                 onClick={() => setPlayTab(tab.id)}
                 aria-current={on ? "page" : undefined}
                 className={cn(
@@ -292,7 +319,7 @@ export function PlayShell() {
         </nav>
       </div>
 
-      <Toast message={state.flash} />
+      <Toast message={state.flash} high={tutorial !== null} />
 
       <Modal
         open={state.introOpen}
@@ -475,11 +502,15 @@ function GuideBar({
   );
 }
 
-function Toast({ message }: { message: string | null }) {
+function Toast({ message, high = false }: { message: string | null; high?: boolean }) {
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed inset-x-0 bottom-52 z-40 flex justify-center px-4 lg:bottom-8"
+      className={cn(
+        "pointer-events-none fixed inset-x-0 z-40 flex justify-center px-4 lg:top-auto lg:bottom-8",
+        // During practice the phone's bottom stack holds the coach; float above the page instead.
+        high ? "top-24" : "bottom-52",
+      )}
     >
       {message ? (
         <p
@@ -511,14 +542,24 @@ function AdvanceButton({
 }) {
   if (hour >= 6) {
     return (
-      <Button variant={ap === 0 ? "default" : "secondary"} className={className} onClick={onClick}>
+      <Button
+        variant={ap === 0 ? "default" : "secondary"}
+        className={className}
+        onClick={onClick}
+        data-tour="advance"
+      >
         <ScrollText />
         File the brief
       </Button>
     );
   }
   return (
-    <Button variant={ap === 0 ? "default" : "secondary"} className={className} onClick={onClick}>
+    <Button
+      variant={ap === 0 ? "default" : "secondary"}
+      className={className}
+      onClick={onClick}
+      data-tour="advance"
+    >
       <span className="tabular-nums">{nextClock}</span>
       <ArrowRight />
     </Button>
@@ -708,7 +749,7 @@ function SiteDetail({ compact = false, onSeal }: { compact?: boolean; onSeal: ()
       <div className="mt-4 flex flex-col gap-2">
         {!compact ? (
           <>
-            <Button size="lg" disabled={scanWhy !== null} onClick={doAssign}>
+            <Button size="lg" disabled={scanWhy !== null} onClick={doAssign} data-tour="scan">
               <Radar />
               {agent ? `Scan with ${agent.name}` : "Select a scanner"}
               <kbd className="ml-auto hidden rounded bg-accent-fg/10 px-1.5 text-xs xl:inline">
@@ -719,7 +760,12 @@ function SiteDetail({ compact = false, onSeal }: { compact?: boolean; onSeal: ()
           </>
         ) : null}
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="secondary" disabled={crossWhy !== null} onClick={doCross}>
+          <Button
+            variant="secondary"
+            disabled={crossWhy !== null}
+            onClick={doCross}
+            data-tour="cross"
+          >
             <GitCompare />
             Cross-check
           </Button>

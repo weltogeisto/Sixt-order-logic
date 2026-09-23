@@ -25,6 +25,7 @@ export function CiteBar({ evidenceId }: { evidenceId: string }) {
     <div
       role="group"
       aria-label="Cite this filing in the brief"
+      data-tour="cite"
       className="mt-4 border-t border-border pt-3"
     >
       <p className="mb-2 text-xs text-muted">Cite in the brief for</p>

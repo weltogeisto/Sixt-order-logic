@@ -104,6 +104,8 @@ src/game/
   engine.test.ts    design-contract tests (tsc-checked; node --test cannot import extensionless)
   guide.ts          nextStep (the one-line guide) + liveSites; pure, reads only what the chrome shows
   guide.test.ts     guide contract: never nudges toward a same-family scanner
+  tutorial.ts       TUTORIAL: the practice hour, one verb per step (title, body, data-tour target, done predicate)
+  tutorial.test.ts  walks every step on the real engine; copy never names an answer
   save.ts           localStorage key sixth-hour-v1, SAVE_VERSION 4, migrateState + migrateBrief (drops dangling cites)
   store.ts          zustand + persist on mutation / pagehide / hidden; doCite / doDraft / doFile
 src/components/game/
@@ -118,6 +120,8 @@ src/components/game/
   Debrief.tsx       filing = BriefEditor + citable case file; results = score, footnote verdicts, lessons
   CodexView.tsx     Back uses returnTo (title stays title)
   OrderMark.tsx     concentric rings; `animate` draws them in
+  Coach.tsx         practice-hour card (replaces the guide line while it runs)
+  useTutorialDriver.ts  advances steps, opens the phone tab a step needs, marks the target with data-tour-active
 src/components/ui/
   dialog.tsx        Modal: Radix dialog (focus trap, Escape), bottom sheet on phones
 src/styles.css      tokens (ink #0e0f0c, paper #ecebe4, sage accent #dfe4d4), `data-hour` sky, grain, keyframes
@@ -140,6 +144,7 @@ UI tokens only — no ad-hoc hex in components. `--color-subtle` is `#85857c` (�
 - Desktop: Scan lives in the site panel. **Next hour** lives in the header. No sticky duplicate Scan.
 - Mobile: one `fixed` bottom stack (guide + Scan/Next, then Surface / Scanners / Brief / File).
 - **The guide line** (`nextStep`) sits under the header on desktop and in the bottom stack on mobile. It may point at a bright site, an independent scanner, the next hour or filing. It must never point at which filing answers which question, and never suggest a same-family scanner (rule 5) — `guide.test.ts` holds that.
+- **Practice hour** (title: "New here? Take the practice hour", later a quiet "Practice hour" button). It runs hours 1–2 on the real engine with `tutorial` set in the store; `persistNow` skips while it runs, so the real save is never touched, and `endTutorial` reloads it. It teaches verbs only — pick a bright site, scan, cite, spend attention, advance, read the hour card, re-read a site, cross-check, draft — never which filing answers which question. Controls it points at carry `data-tour` hooks; keep them when you move a control.
 - **Keyboard:** 1–6 scanner, S scan, C cross-check, B brief, N next hour, ? shortcuts. Ignored while typing or while a dialog is open.
 - Map coordinates are percentages of the measured box (`SITES[].x/y`), spread so labels never collide at 390 px: y 13 / 37 / 65 / 86.
 - All modals go through `Modal` (Radix). Don't hand-roll `fixed inset-0` overlays — they lose focus trap and Escape.

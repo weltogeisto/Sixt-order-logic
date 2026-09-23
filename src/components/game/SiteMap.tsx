@@ -122,6 +122,7 @@ export function SiteMap() {
                 type="button"
                 onClick={() => selectSite(site.id)}
                 aria-pressed={selected}
+                data-tour={`site-${site.id}`}
                 aria-label={`${site.name}. ${list.length} ${list.length === 1 ? "filing" : "filings"}${order ? `, deepest order ${order}` : ""}. ${status}${captured ? ". Family capture" : ""}.`}
                 className="group absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1.5 outline-none"
                 style={{ left: pos[site.id].x, top: pos[site.id].y }}

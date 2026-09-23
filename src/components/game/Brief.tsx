@@ -87,6 +87,7 @@ export function BriefPanel({ onOpen }: { onOpen: (q: QuestionId) => void }) {
               <button
                 type="button"
                 onClick={() => onOpen(q.id)}
+                data-tour={i === 0 ? "brief" : undefined}
                 aria-label={`${q.title}. ${statusLine(Boolean(answer), cites.length)}. Open in the brief.`}
                 className="group relative flex h-full w-full flex-col rounded-2xl bg-raised py-3.5 pr-3.5 pl-5 text-left shadow-[var(--shadow-border)] transition-[box-shadow,background-color] duration-150 hover:bg-overlay hover:shadow-[var(--shadow-border-hover)]"
               >

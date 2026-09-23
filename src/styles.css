@@ -216,6 +216,25 @@
   }
 }
 
+/* Practice hour: the one control the current step is about. */
+[data-tour-active] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-lg);
+  animation: tour-pulse 1.8s ease-in-out infinite;
+}
+@keyframes tour-pulse {
+  0%,
+  100% {
+    outline-color: var(--color-accent);
+    outline-offset: 4px;
+  }
+  50% {
+    outline-color: color-mix(in oklab, var(--color-accent) 35%, transparent);
+    outline-offset: 7px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

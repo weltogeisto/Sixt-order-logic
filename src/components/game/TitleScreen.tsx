@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, BookOpen, Play, RotateCcw } from "lucide-react";
+import { ArrowRight, BookOpen, GraduationCap, Play, RotateCcw } from "lucide-react";
 import { APP_NAME, HOURS } from "@/game/data";
 import { briefProgress } from "@/game/engine";
 import { useGame } from "@/game/store";
@@ -11,6 +11,8 @@ export function TitleScreen() {
   const begin = useGame((s) => s.begin);
   const resume = useGame((s) => s.resume);
   const setScreen = useGame((s) => s.setScreen);
+  const startTutorial = useGame((s) => s.startTutorial);
+  const tutorialDone = useGame((s) => s.tutorialDone);
   const state = useGame((s) => s.state);
   const bestScore = useGame((s) => s.bestScore);
   const canResume = !!state && !state.ended;
@@ -92,6 +94,37 @@ export function TitleScreen() {
               Codex
             </Button>
           </div>
+
+          {!tutorialDone && !canResume ? (
+            <button
+              type="button"
+              onClick={startTutorial}
+              className="group mt-4 flex w-full max-w-md animate-rise items-center gap-3 rounded-2xl bg-accent/[0.07] p-3.5 text-left shadow-[0_0_0_1px_rgba(223,228,212,0.22)] transition-shadow [animation-delay:320ms] hover:shadow-[var(--shadow-glow)]"
+            >
+              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-accent-fg">
+                <GraduationCap className="size-4" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-fg">
+                  New here? Take the practice hour
+                </span>
+                <span className="block text-xs text-muted">Three minutes, guided, not scored.</span>
+              </span>
+              <ArrowRight
+                className="size-4 text-muted transition-transform group-hover:translate-x-0.5"
+                aria-hidden
+              />
+            </button>
+          ) : (
+            <Button
+              variant="ghost"
+              className="mt-3 animate-rise [animation-delay:320ms]"
+              onClick={startTutorial}
+            >
+              <GraduationCap />
+              Practice hour
+            </Button>
+          )}
         </div>
 
         <div className="relative hidden aspect-square w-full max-w-md justify-self-center lg:block">

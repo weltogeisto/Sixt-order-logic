@@ -21,7 +21,7 @@ npm run typecheck
 Game-logic contract tests (Vite 8 ships rolldown, so bundle with esbuild first):
 
 ```bash
-for t in engine guide; do
+for t in engine guide tutorial; do
   npx --yes esbuild@0.25 src/game/$t.test.ts --bundle --platform=node \
     --format=esm --outfile=/tmp/$t.test.mjs && node --test /tmp/$t.test.mjs
 done
@@ -29,7 +29,7 @@ done
 
 ## Playing
 
-The guide line under the header always names the next useful move. Keyboard: `1`–`6` pick a scanner, `S` scans, `C` cross-checks, `B` opens the brief, `N` moves to the next hour, `?` lists the shortcuts.
+New players get a guided practice hour from the title screen: two hours of the real game, coached one move at a time, never saved or scored. The guide line under the header always names the next useful move. Keyboard: `1`–`6` pick a scanner, `S` scans, `C` cross-checks, `B` opens the brief, `N` moves to the next hour, `?` lists the shortcuts.
 
 ## Where things are
 
